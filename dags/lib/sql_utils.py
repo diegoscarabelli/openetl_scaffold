@@ -4,11 +4,13 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional, Tuple, Type
 
+from datetime import datetime
+
 from dotenv import load_dotenv
 from sqlalchemy import Column, DateTime, ForeignKey, MetaData, func
 from sqlalchemy import create_engine as _create_engine
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import DeclarativeBase, declared_attr
+from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
 load_dotenv()
 
@@ -76,8 +78,8 @@ def make_base(schema: str, include_update_ts: bool = True) -> Type:
         __abstract__ = True
 
         @declared_attr
-        def update_ts(cls) -> Column:
-            return Column(
+        def update_ts(cls) -> Mapped[datetime]:
+            return mapped_column(
                 DateTime(timezone=True),
                 server_default=func.now(),
                 onupdate=func.now(),
