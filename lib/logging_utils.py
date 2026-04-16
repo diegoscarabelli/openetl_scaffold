@@ -1,0 +1,12 @@
+"""Simple logger. Respects LOG_LEVEL environment variable (default INFO)."""
+import logging
+import os
+
+
+def get_logger(name: str) -> logging.Logger:
+    level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+    logging.basicConfig(
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        level=level,
+    )
+    return logging.getLogger(name)
