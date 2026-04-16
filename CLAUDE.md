@@ -1,0 +1,109 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## README.md
+
+The most important source of truth is the [`/README.md`](README.md) file. You MUST read and understand the `README.md` file in order to provide accurate and relevant responses and coding assistance.
+The `README.md` file includes:
+- **Layout**: Repository structure with `dags/lib/` shared utilities, `dags/pipelines/` pipeline implementations, and top-level DDL/SQL files.
+- **Quick Start**: Clone, credentials, database setup (database.ddl, schemas.ddl, iam.sql), Python dependencies, and creating a new pipeline.
+- **Airflow 3 / Prefect**: Orchestrator-specific instructions for running pipelines.
+- **Data Directories**: Four-directory file state machine (ingest, process, store, quarantine).
+
+## CONTRIBUTING.md
+
+The [`/CONTRIBUTING.md`](CONTRIBUTING.md) file contains development guidelines and code quality standards. You MUST follow these guidelines when writing or modifying code.
+The `CONTRIBUTING.md` file includes:
+- **How to Contribute**: Setup, bug reports, feature requests, PR checklist.
+- **Formatting**: Python formatting with Black, Autoflake, and Docformatter. SQL formatting with SQLFluff. Pre-commit hooks and make targets.
+- **Testing**: Requirements for tests, coverage expectations, and how to run tests.
+- **Documentation**: Guidelines for updating documentation when making changes.
+- **Code Review Process**: How PRs are reviewed and merged.
+
+## Code Execution Environment
+
+Development dependencies are managed via a `.venv` virtual environment created by the Makefile:
+
+```bash
+make venv
+```
+
+This installs everything in [`requirements_dev.txt`](requirements_dev.txt).
+
+### Command Reference
+
+- **Create/update venv**: `make venv`
+- **Format code**: `make format`
+- **Check formatting**: `make check-format`
+- **Run tests**: `make test`
+
+## MANDATORY Formatting Protocol
+
+When ANY formatting request is made (explicit or implicit), you MUST:
+
+### Step 1: Manual Quality Review (BEFORE make format)
+Execute EVERY item from CONTRIBUTING.md Quality Checklist:
+
+- [ ] Module docstring present
+- [ ] Imports properly organized and sorted, no unused imports
+- [ ] All functions have type hints
+- [ ] All docstrings use `:param` and `:return` format
+- [ ] **MANUALLY CHECK: Proper spacing and blank lines throughout file**
+- [ ] Black-compliant format
+- [ ] **MANUALLY CHECK: No trailing whitespace**
+- [ ] Consistent indentation (4 spaces)
+- [ ] **MANUALLY CHECK: Periods at the end of ALL sentences** (comments, docstrings, bullet lists, log messages)
+- [ ] **MANUALLY CHECK: No line longer than 88 characters**
+
+### Step 2: Apply Automated Tools
+- [ ] Run `make format`
+- [ ] Run `make check-format` to validate
+
+### Step 3: Final Manual Verification
+- [ ] Verify final newline at end of file
+- [ ] Double-check line lengths and periods were properly applied
+
+### CRITICAL: Manual Checks Required
+The following items are NOT caught by automated tools and MUST be manually verified:
+1. **Line length**: Check every line is 88 characters or less.
+2. **Periods**: Every comment, docstring sentence, log message ends with period.
+3. **Spacing**: Proper blank lines between logical sections.
+4. **File ending**: Final newline present.
+
+## Formatting Trigger Words
+
+When you encounter ANY of these words/phrases, immediately execute the complete formatting protocol:
+- "formatting"
+- "format"
+- "quality check"
+- "style"
+- "apply formatting guidelines"
+- "according to guidelines in CONTRIBUTING.md"
+- "quality checklist"
+- When completing ANY code file creation/modification
+
+NEVER use `make format` alone: always execute the complete manual + automated protocol.
+
+## Quality Checklist Command Reference
+
+Before ANY file completion, run this mental checklist:
+1. **Read current file**: identify all issues manually.
+2. **Line length check**: scan for any line exceeding 88 characters.
+3. **Period check**: ensure all comments, docstrings, and log messages end with periods.
+4. **Spacing check**: verify proper spacing between sections and imports.
+5. **Apply automated tools**: run `make format` and `make check-format`.
+6. **Final verification**: confirm all quality standards are met.
+
+## Code Completion Protocol Enforcement
+
+**MANDATORY**: Before marking any code task as complete:
+1. Execute complete manual quality review (Steps 1-3 above).
+2. Run `make format` followed by `make check-format`.
+3. Verify zero formatting violations.
+4. Only then proceed with task completion.
+
+**VIOLATION HANDLING**: If you discover you missed manual checks:
+1. Immediately acknowledge the oversight.
+2. Execute the complete formatting protocol.
+3. Document what was missed to prevent recurrence.

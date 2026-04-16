@@ -1,8 +1,10 @@
-"""File type definitions for the example pipeline.
-
-Copy to your pipeline directory and replace ExampleFileTypes. Each member
-value is a compiled regex matched against filenames in ingest/.
 """
+File type definitions for the example pipeline.
+
+Copy to your pipeline directory and replace ExampleFileTypes. Each member value is a
+compiled regex matched against filenames in ingest/.
+"""
+
 import re
 from enum import Enum
 

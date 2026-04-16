@@ -1,12 +1,15 @@
-"""Standard task implementations: ingest, batch, process_wrapper, store.
-
-Pure Python — no orchestrator imports. Wired into DAGs/flows via
-lib/airflow_utils.py or lib/prefect_utils.py.
 """
+Standard task implementations and Processor ABC.
+
+Pure Python — no orchestrator imports. Wired into DAGs/flows via lib/airflow_utils.py or
+lib/prefect_utils.py.
+"""
+
 from __future__ import annotations
 
 import re
 import shutil
+from abc import ABC, abstractmethod
 from datetime import datetime
 from traceback import format_exc
 from typing import TYPE_CHECKING, Dict, List, Optional
@@ -14,19 +17,22 @@ from typing import TYPE_CHECKING, Dict, List, Optional
 from lib.filesystem_utils import DataState, FileSet
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
     from lib.pipeline_config import PipelineConfig
 
 
 def ingest(config: "PipelineConfig") -> int:
-    """Scan ingest/ and route files to process/ or store/.
+    """
+    Scan ingest/ and route files to process/ or store/.
 
     Files matching process_format go to process/ for transformation.
     Files matching store_format bypass processing and go directly to store/.
 
     Raises RuntimeError when no matching files are found. Callers should
     translate this to the orchestrator's skip/cancel signal:
-      - Airflow 3: raise AirflowSkipException
-      - Prefect:   raise Abort or return a sentinel value
+      - Airflow 3: raise AirflowSkipException.
+      - Prefect: raise Abort or return a sentinel value.
 
     Returns the number of files routed to process/.
     """
@@ -57,7 +63,8 @@ def ingest(config: "PipelineConfig") -> int:
 
 
 def batch(config: "PipelineConfig") -> List[str]:
-    """Group files in process/ into FileSet objects.
+    """
+    Group files in process/ into FileSet objects.
 
     Default: one FileSet per file. Override via config.batch_callable for
     more complex grouping (e.g. group by date prefix or user ID).
@@ -89,7 +96,8 @@ def process_wrapper(
     run_id: str = "",
     start_date: Optional[datetime] = None,
 ) -> Dict:
-    """Deserialize a batch and run the processor.
+    """
+    Deserialize a batch and run the processor.
 
     Called once per batch (one dynamically-mapped task instance).
     Returns {"files": [...], "success": bool, "error": str|None}.
@@ -117,7 +125,8 @@ def process_wrapper(
 
 
 def store(all_results: List[Dict], config: "PipelineConfig") -> Dict[str, int]:
-    """Move processed files to store/ (success) or quarantine/ (failure).
+    """
+    Move processed files to store/ (success) or quarantine/ (failure).
 
     all_results: list of dicts returned by process_wrapper across all batches.
     Returns {"stored": N, "quarantined": M}.
@@ -129,7 +138,9 @@ def store(all_results: List[Dict], config: "PipelineConfig") -> Dict[str, int]:
     stored = quarantined = 0
 
     for batch_result in all_results:
-        target = DataState.STORE if batch_result.get("success") else DataState.QUARANTINE
+        target = (
+            DataState.STORE if batch_result.get("success") else DataState.QUARANTINE
+        )
         for filename in batch_result.get("files", []):
             src = dirs.process / filename
             if not src.exists():
@@ -141,3 +152,59 @@ def store(all_results: List[Dict], config: "PipelineConfig") -> Dict[str, int]:
                 quarantined += 1
 
     return {"stored": stored, "quarantined": quarantined}
+
+
+# ---------------------------------------------------------------------------
+# Processor ABC — subclass in pipelines/{name}/process.py.
+# ---------------------------------------------------------------------------
+
+
+class Processor(ABC):
+    """
+    Abstract base class for pipeline processors.
+
+    Implement process_file_set() with your domain logic. The process() template method
+    handles DB session management and error capture.
+    """
+
+    def __init__(
+        self,
+        config: "PipelineConfig",
+        run_id: str,
+        start_date: datetime,
+        file_set: FileSet,
+    ) -> None:
+        self.config = config
+        self.run_id = run_id
+        self.start_date = start_date
+        self.file_set = file_set
+
+    def process(self) -> Dict[str, Optional[str]]:
+        """
+        Template method: open a DB session and call process_file_set().
+
+        Returns {"success": True, "error": None} on success, or
+        {"success": False, "error": <traceback>} on failure.
+        The return value is used by the store task to route files.
+        """
+        from sqlalchemy.orm import Session
+
+        from lib.sql_utils import get_engine
+
+        engine = get_engine(schema=self.config.db_schema)
+        try:
+            with Session(engine) as session:
+                self.process_file_set(self.file_set, session)
+            return {"success": True, "error": None}
+        except Exception:
+            return {"success": False, "error": format_exc()}
+
+    @abstractmethod
+    def process_file_set(self, file_set: FileSet, session: "Session") -> None:
+        """
+        Domain logic: parse files, build ORM instances, upsert to database.
+
+        Raise any exception to signal failure. The template method captures it
+        and routes files to quarantine/.
+        """
+        ...

@@ -1,4 +1,5 @@
 """File state machine: DataState, ETLDataDirectories, FileSet."""
+
 from __future__ import annotations
 
 import json
@@ -19,10 +20,11 @@ class DataState(Enum):
 
 @dataclass
 class ETLDataDirectories:
-    """Manages the four pipeline data directories.
+    """
+    Manages the four pipeline data directories.
 
-    Base path comes from DATA_DIR env var (defaults to ./data relative to cwd).
-    All four directories are created on __post_init__.
+    Base path comes from DATA_DIR env var (defaults to ./data relative to cwd). All four
+    directories are created on __post_init__.
     """
 
     pipeline_id: str = ""
@@ -44,7 +46,11 @@ class ETLDataDirectories:
             directory.mkdir(parents=True, exist_ok=True)
 
     def move(self, src: Path, state: DataState) -> Path:
-        """Move a file to the directory for state. Returns the new path."""
+        """
+        Move a file to the directory for state.
+
+        Returns the new path.
+        """
         target_dir: Path = getattr(self, state.value)
         dst = target_dir / src.name
         shutil.move(str(src), dst)
@@ -53,29 +59,37 @@ class ETLDataDirectories:
 
 @dataclass
 class FileSet:
-    """A logical group of related files within one processing batch.
+    """
+    A logical group of related files within one processing batch.
 
-    files maps file type enum name (str) to a list of Paths. Using the enum
-    name (not the enum member) keeps FileSet JSON-serializable without custom
-    encoding.
+    files maps file type enum name (str) to a list of Paths. Using the enum name (not
+    the enum member) keeps FileSet JSON-serializable without custom encoding.
     """
 
     files: Dict[str, List[Path]]
 
     def get_files(self, file_type: Enum) -> List[Path]:
-        """Return files for a given file type, or [] if none present."""
+        """
+        Return files for a given file type, or [] if none present.
+        """
         return self.files.get(file_type.name, [])
 
     def all_files(self) -> List[Path]:
-        """Flat list of all files across all types."""
+        """
+        Flat list of all files across all types.
+        """
         return [f for paths in self.files.values() for f in paths]
 
     def to_serializable(self) -> str:
-        """Serialize to a JSON string for XCom / task result passing."""
+        """
+        Serialize to a JSON string for XCom / task result passing.
+        """
         return json.dumps({k: [str(p) for p in v] for k, v in self.files.items()})
 
     @classmethod
     def from_serializable(cls, data: str) -> "FileSet":
-        """Deserialize from the JSON string produced by to_serializable()."""
+        """
+        Deserialize from the JSON string produced by to_serializable().
+        """
         raw = json.loads(data)
         return cls(files={k: [Path(p) for p in v] for k, v in raw.items()})

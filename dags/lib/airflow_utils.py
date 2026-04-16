@@ -1,4 +1,9 @@
-"""Airflow 3 DAG factory. Import create_dag() in your pipeline's dag.py."""
+"""
+Airflow 3 DAG factory.
+
+Import create_dag() in your pipeline's dag.py.
+"""
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -14,10 +19,11 @@ if TYPE_CHECKING:
 
 
 def create_dag(config: "PipelineConfig") -> DAG:
-    """Wire the standard ingest -> batch -> process -> store task sequence.
+    """
+    Wire the standard ingest -> batch -> process -> store task sequence.
 
-    The ingest task raises RuntimeError when no files are found; this is
-    translated to AirflowSkipException so the run is marked skipped, not failed.
+    The ingest task raises RuntimeError when no files are found; this is translated to
+    AirflowSkipException so the run is marked skipped, not failed.
     """
 
     def _ingest(**context: Any) -> int:
@@ -26,6 +32,7 @@ def create_dag(config: "PipelineConfig") -> DAG:
             return fn(config)
         except RuntimeError:
             from airflow.exceptions import AirflowSkipException
+
             raise AirflowSkipException("No files to process.")
 
     def _batch(**context: Any) -> list:

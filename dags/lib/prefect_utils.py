@@ -1,4 +1,9 @@
-"""Prefect flow factory. Import create_flow() in your pipeline's flow.py."""
+"""
+Prefect flow factory.
+
+Import create_flow() in your pipeline's flow.py.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -8,10 +13,11 @@ if TYPE_CHECKING:
 
 
 def create_flow(config: "PipelineConfig"):
-    """Build the standard four-task Prefect flow from a PipelineConfig.
+    """
+    Build the standard four-task Prefect flow from a PipelineConfig.
 
-    The ingest task returns 0 when no files are found; the flow then raises
-    Abort to cancel cleanly without marking the run as failed.
+    The ingest task returns 0 when no files are found; the flow then raises Abort to
+    cancel cleanly without marking the run as failed.
     """
     from prefect import flow, task
     from prefect.cache_policies import NONE
@@ -45,6 +51,7 @@ def create_flow(config: "PipelineConfig"):
         count = _ingest()
         if not count:
             from prefect.exceptions import Abort
+
             raise Abort("No files to process.")
         batches = _batch()
         process_futures = _process.map(batches)

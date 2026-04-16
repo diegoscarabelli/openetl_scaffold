@@ -26,10 +26,16 @@ dags/                    # All pipeline code; matches the DAGs folder Astro/Airf
       dag.py             # Airflow 3 entry point (~10 lines)
       flow.py            # Prefect entry point (~10 lines)
 data/                    # Runtime data (gitignored); override with DATA_DIR env var
-requirements.txt
-schemas.ddl              # CREATE SCHEMA statements
 database.ddl             # CREATE DATABASE (run once)
-.env.example
+schemas.ddl              # CREATE SCHEMA + extensions
+iam.sql                  # Roles and users (pg_read_all_data / pg_write_all_data)
+.env.template
+requirements.txt
+requirements_dev.txt     # Adds linting, testing, pre-commit
+pyproject.toml           # Tool configuration (Black, SQLFluff, pytest, etc.)
+Makefile                 # make format, check-format, test, venv
+CONTRIBUTING.md
+CLAUDE.md
 ```
 
 The top-level folder is called `dags/` because Astro CLI and native Airflow both hardcode that name as their DAGs folder. Prefect does not care about the directory name; putting flows under `dags/` keeps both orchestrators working with zero configuration overrides. Airflow/Astro automatically adds `dags/` to PYTHONPATH, so `from lib.xxx import yyy` resolves without setup. For Prefect, run with `PYTHONPATH=dags`.
@@ -53,28 +59,27 @@ gh repo create system2_data_pipelines --private --source=. --remote=origin --pus
 ### 2. Set up credentials
 
 ```bash
-cp .env.example .env
+cp .env.template .env
 # Edit .env — it is gitignored. Fill in DB_PASSWORD and other values.
 ```
 
 ### 3. Create database objects (run as Postgres superuser)
 
+Edit `iam.sql` first to replace the two `<REDACTED>` password placeholders with real passwords, then run:
+
 ```bash
-psql -U postgres -f database.ddl                            # create database (once)
-psql -U postgres -d system2_pipelines_db -f schemas.ddl     # create schemas
+psql -U postgres -f database.ddl              # create database (once)
+psql -U postgres -d system2 -f schemas.ddl    # create schemas
+psql -U postgres -d system2 -f iam.sql        # create roles and users
 ```
 
-Create the app user with read/write but no DDL privileges:
+`iam.sql` creates:
 
-```sql
-CREATE USER system2_pipelines WITH PASSWORD 'your_password';
-GRANT CONNECT ON DATABASE system2_pipelines_db TO system2_pipelines;
--- Repeat per pipeline after running its tables.ddl:
-GRANT USAGE ON SCHEMA example TO system2_pipelines;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA example TO system2_pipelines;
-ALTER DEFAULT PRIVILEGES IN SCHEMA example
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO system2_pipelines;
-```
+- `readers` role: read-only permission bundle (via `pg_read_all_data`).
+- `read_only` user: login for BI tools, notebooks, ad-hoc SQL; granted `readers`.
+- `system2_pipelines` user: login for pipeline read+write; granted `pg_read_all_data` + `pg_write_all_data`.
+
+Grants are blanket across all non-system schemas (including future ones), so no further IAM changes are needed when adding a new pipeline schema. Requires PostgreSQL 14+.
 
 ### 4. Install Python dependencies
 

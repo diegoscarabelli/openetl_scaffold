@@ -1,4 +1,5 @@
-"""Prefect flow entry point.
+"""
+Prefect flow entry point.
 
 Keep this file thin (~10 lines). All logic lives in process.py and lib/.
 
@@ -12,6 +13,7 @@ Deploy to Prefect server or Cloud:
     cd dags && prefect deploy pipelines/example/flow.py:flow \\
         --name example-prod --work-pool default
 """
+
 from datetime import datetime
 
 from lib.pipeline_config import PipelineConfig

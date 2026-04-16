@@ -1,13 +1,13 @@
 """SQLAlchemy helpers: get_engine, make_base, fkey, upsert_model_instances."""
+
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Type
 
-from datetime import datetime
-
 from dotenv import load_dotenv
-from sqlalchemy import Column, DateTime, ForeignKey, MetaData, func
+from sqlalchemy import DateTime, Engine, ForeignKey, MetaData, func
 from sqlalchemy import create_engine as _create_engine
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
@@ -18,20 +18,27 @@ _metadata_registry: Dict[str, MetaData] = {}
 _base_registry: Dict[Tuple, Type] = {}
 
 
-def get_engine(schema: Optional[str] = None):
-    """Create a SQLAlchemy engine from environment variables.
+def get_engine(schema: Optional[str] = None) -> Engine:
+    """
+    Create a SQLAlchemy engine from environment variables.
 
-    Reads DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD from .env
-    (or the environment). Set DATABASE_URL to override all individual vars.
+    Reads SQL_DB_HOST, SQL_DB_PORT, SQL_DB_NAME, SQL_DB_USER, SQL_DB_PASSWORD from .env
+    (or the environment). Set DATABASE_URL to override all individual vars. The SQL_DB_
+    prefix avoids conflicts with Airflow's entrypoint script, which reserves DB_HOST for
+    health-check logic.
+
+    :param schema: PostgreSQL schema to set as the default search path. If None, uses
+        the database default search path.
+    :return: A configured SQLAlchemy Engine.
     """
     load_dotenv()
     url = os.getenv("DATABASE_URL") or (
         "postgresql+psycopg://{user}:{password}@{host}:{port}/{db}".format(
-            user=os.environ["DB_USER"],
-            password=os.environ["DB_PASSWORD"],
-            host=os.getenv("DB_HOST", "localhost"),
-            port=os.getenv("DB_PORT", "5432"),
-            db=os.environ["DB_NAME"],
+            user=os.environ["SQL_DB_USER"],
+            password=os.environ["SQL_DB_PASSWORD"],
+            host=os.getenv("SQL_DB_HOST", "localhost"),
+            port=os.getenv("SQL_DB_PORT", "5432"),
+            db=os.environ["SQL_DB_NAME"],
         )
     )
     connect_args: Dict[str, Any] = {}
@@ -41,15 +48,16 @@ def get_engine(schema: Optional[str] = None):
 
 
 def make_base(schema: str, include_update_ts: bool = True) -> Type:
-    """Create a SQLAlchemy declarative base scoped to a PostgreSQL schema.
+    """
+    Create a SQLAlchemy declarative base scoped to a PostgreSQL schema.
 
     Results are cached — calling make_base with the same arguments always
     returns the same class, so models across a pipeline share one MetaData.
 
-    Args:
-        schema: PostgreSQL schema name (e.g. "linkedin").
-        include_update_ts: When True, injects an update_ts TIMESTAMPTZ column
-                           set to NOW() on every INSERT and UPDATE.
+    :param schema: PostgreSQL schema name (e.g. "linkedin").
+    :param include_update_ts: When True, injects an update_ts TIMESTAMPTZ
+        column set to NOW() on every INSERT and UPDATE.
+    :return: A DeclarativeBase subclass bound to the given schema.
 
     Usage:
         UpsertBase = make_base(schema="linkedin", include_update_ts=True)
@@ -91,10 +99,16 @@ def make_base(schema: str, include_update_ts: bool = True) -> Type:
 
 
 def fkey(schema: str, table: str, column: str) -> ForeignKey:
-    """Return a fully-qualified ForeignKey (schema.table.column).
+    """
+    Return a fully-qualified ForeignKey (schema.table.column).
 
-    Always use this instead of bare ForeignKey("table.column") — bare
+    Always use this instead of bare ForeignKey("table.column"); bare
     references silently omit the schema in multi-schema databases.
+
+    :param schema: PostgreSQL schema name.
+    :param table: Table name.
+    :param column: Column name.
+    :return: A ForeignKey referencing schema.table.column.
 
     Example:
         user_id = Column(BigInteger, fkey("auth", "user", "id"), nullable=False)
@@ -111,20 +125,19 @@ def upsert_model_instances(
     latest_check_column: Optional[str] = None,
     latest_check_inclusive: bool = True,
 ) -> None:
-    """Bulk upsert ORM instances using PostgreSQL INSERT ... ON CONFLICT.
+    """
+    Bulk upsert ORM instances using PostgreSQL INSERT ... ON CONFLICT.
 
-    Args:
-        session: An open SQLAlchemy Session.
-        model_instances: ORM instances to insert or update.
-        conflict_columns: Column names forming the unique conflict target.
-                          Must match a UNIQUE constraint in the DDL.
-        on_conflict_update: If False, silently skip conflicting rows.
-        update_columns: Columns to set on conflict. Defaults to all
-                        non-PK columns not in conflict_columns.
-        latest_check_column: Only update if incoming value >= (or >) existing.
-                             Prevents stale re-ingested data from overwriting
-                             newer records.
-        latest_check_inclusive: Use >= when True, > when False.
+    :param session: An open SQLAlchemy Session.
+    :param model_instances: ORM instances to insert or update.
+    :param conflict_columns: Column names forming the unique conflict target. Must match
+        a UNIQUE constraint in the DDL.
+    :param on_conflict_update: If False, silently skip conflicting rows.
+    :param update_columns: Columns to set on conflict. Defaults to all non-PK columns
+        not in conflict_columns.
+    :param latest_check_column: Only update if incoming value >= (or >) existing.
+        Prevents stale re-ingested data from overwriting newer records.
+    :param latest_check_inclusive: Use >= when True, > when False.
     """
     if not model_instances:
         return
@@ -151,7 +164,9 @@ def upsert_model_instances(
         if latest_check_column:
             existing = table.c[latest_check_column]
             incoming = stmt.excluded[latest_check_column]
-            cond = incoming >= existing if latest_check_inclusive else incoming > existing
+            cond = (
+                incoming >= existing if latest_check_inclusive else incoming > existing
+            )
             stmt = stmt.on_conflict_do_update(
                 index_elements=conflict_columns, set_=set_clause, where=cond
             )

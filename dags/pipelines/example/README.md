@@ -8,7 +8,7 @@ This is a template. Copy this directory to `pipelines/{your_pipeline}/` and:
 4. Update `tables.ddl` to match your ORM models.
 5. Update `dag.py` or `flow.py` with your pipeline ID and config.
 6. Add `CREATE SCHEMA IF NOT EXISTS {your_pipeline};` to `schemas.ddl`.
-7. Run `psql -d system2_pipelines_db -f pipelines/{your_pipeline}/tables.ddl`.
+7. Run `psql -d system2 -f pipelines/{your_pipeline}/tables.ddl`.
 8. Grant permissions to `system2_pipelines` (see top-level README).
 
 ## Triggering a run
