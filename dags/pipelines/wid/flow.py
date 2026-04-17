@@ -18,7 +18,7 @@ Deploy to Prefect server or Cloud:
 from __future__ import annotations
 
 import logging
-from typing import List
+from typing import Callable, List
 
 from lib.task_utils import batch, ingest, process_wrapper, store
 
@@ -29,7 +29,7 @@ from .process import WIDProcessor
 logger = logging.getLogger(__name__)
 
 
-def _build_flow():
+def _build_flow() -> Callable:
     """
     Build the WID Prefect flow with extract prepended.
 
