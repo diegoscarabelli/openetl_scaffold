@@ -108,7 +108,7 @@ def _build_flow() -> Callable:
     )
     def example_flow() -> None:
         """
-        WID pipeline flow: extract, ingest, batch, process, store.
+        Example pipeline flow: extract, ingest, batch, process, store.
         """
 
         _extract()
