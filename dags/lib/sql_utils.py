@@ -33,6 +33,11 @@ from sqlalchemy.sql import and_, or_
 
 load_dotenv()
 
+# psycopg3 (libpq) rejects queries with more than 65 535
+# parameters. Upserts that exceed this limit are split into
+# chunks automatically by _upsert_values().
+_PSYCOPG_MAX_PARAMS = 65_535
+
 
 class QueryType:
     """
@@ -154,6 +159,7 @@ def upsert_model_instances(
     latest_check_column: Optional[str] = None,
     latest_check_inclusive: bool = False,
     returning_columns: Optional[List[str]] = None,
+    chunk_size: int = 10_000,
 ) -> Optional[List[Any]]:
     """
     Bulk upsert ORM instances using PostgreSQL INSERT ... ON CONFLICT.
@@ -176,6 +182,8 @@ def upsert_model_instances(
     :param latest_check_inclusive: Use >= when True, > when False.
     :param returning_columns: Column names to return via RETURNING clause. If None, no
         RETURNING is issued and the function returns None.
+    :param chunk_size: Maximum rows per INSERT statement. Clamped internally so the
+        total parameter count never exceeds the psycopg3 limit.
     :return: List of model instances (with only the requested columns populated) if
         returning_columns is specified, otherwise None.
     """
@@ -209,6 +217,7 @@ def upsert_model_instances(
         latest_check_column=latest_check_column,
         latest_check_inclusive=latest_check_inclusive,
         returning_columns=returning_columns,
+        chunk_size=chunk_size,
     )
 
     if results is None:
@@ -227,12 +236,14 @@ def _upsert_values(
     latest_check_column: Optional[str] = None,
     latest_check_inclusive: bool = False,
     returning_columns: Optional[List[str]] = None,
+    chunk_size: int = 10_000,
 ) -> Optional[List[Dict[str, Any]]]:
     """
     Bulk upsert dictionaries into a PostgreSQL table via SQLAlchemy Core.
 
     Builds and executes the appropriate SQL statement for insert, upsert, or insert-
-    ignore, and can return the resulting rows as dictionaries if requested.
+    ignore, and can return the resulting rows as dictionaries if requested. Large value
+    lists are split into chunks to stay within the psycopg3 parameter limit.
 
     :param model: SQLAlchemy ORM model class representing the table.
     :param values: List of dicts mapping column names to values.
@@ -248,6 +259,8 @@ def _upsert_values(
     :param latest_check_inclusive: Use >= when True, > when False.
     :param returning_columns: Column names to return via RETURNING. If None, no
         RETURNING is issued.
+    :param chunk_size: Maximum rows per INSERT statement. Clamped internally so the
+        total parameter count never exceeds the psycopg3 limit.
     :return: List of dicts with returned values if returning_columns is specified,
         otherwise None.
     """
@@ -276,87 +289,134 @@ def _upsert_values(
             if col.name not in conflict_columns
         ]
 
-    insert_stmt = insert(model).values(values)
+    # Clamp chunk_size so total parameters stay within the
+    # psycopg3 limit. Use the full model column count because
+    # SQLAlchemy fills in columns with Python-side defaults
+    # even when omitted from the values dicts.
+    num_cols = len(model.__table__.columns)
+    max_rows = max(1, min(chunk_size, _PSYCOPG_MAX_PARAMS // num_cols))
 
-    if query_type == QueryType.UPSERT:
-        update_dict = {col: insert_stmt.excluded[col] for col in update_columns}
+    for chunk_start in range(0, len(values), max_rows):
+        chunk = values[chunk_start : chunk_start + max_rows]
 
-        # Automatically inject update_ts if the model has it.
-        if hasattr(model, "update_ts") and "update_ts" not in update_dict:
-            update_dict["update_ts"] = datetime.now(tz=timezone.utc)
+        insert_stmt = insert(model).values(chunk)
 
-        if latest_check_column:
-            excluded_col = insert_stmt.excluded[latest_check_column]
-            existing_col = getattr(model, latest_check_column)
-            where_clause = (
-                excluded_col >= existing_col
-                if latest_check_inclusive
-                else excluded_col > existing_col
+        if query_type == QueryType.UPSERT:
+            update_dict = {
+                col: insert_stmt.excluded[col]
+                for col in update_columns
+            }
+
+            # Automatically inject update_ts if the
+            # model has it.
+            if (
+                hasattr(model, "update_ts")
+                and "update_ts" not in update_dict
+            ):
+                update_dict["update_ts"] = datetime.now(
+                    tz=timezone.utc,
+                )
+
+            if latest_check_column:
+                excluded_col = insert_stmt.excluded[
+                    latest_check_column
+                ]
+                existing_col = getattr(
+                    model, latest_check_column
+                )
+                where_clause = (
+                    excluded_col >= existing_col
+                    if latest_check_inclusive
+                    else excluded_col > existing_col
+                )
+            else:
+                where_clause = None
+
+            upsert_stmt = insert_stmt.on_conflict_do_update(
+                index_elements=conflict_columns,
+                set_=update_dict,
+                where=where_clause,
             )
-        else:
-            where_clause = None
 
-        upsert_stmt = insert_stmt.on_conflict_do_update(
-            index_elements=conflict_columns,
-            set_=update_dict,
-            where=where_clause,
-        )
-
-        if returning_columns:
-            upsert_stmt = upsert_stmt.returning(
-                *[getattr(model, col) for col in returning_columns]
-            )
-
-    elif query_type == QueryType.INSERT:
-        upsert_stmt = insert_stmt
-
-        if returning_columns:
-            upsert_stmt = upsert_stmt.returning(
-                *[getattr(model, col) for col in returning_columns]
-            )
-
-    elif query_type == QueryType.INSERT_IGNORE:
-        upsert_stmt = insert_stmt.on_conflict_do_nothing(
-            index_elements=conflict_columns
-        )
-
-    else:
-        raise ValueError(f"Invalid query type: {query_type}.")
-
-    # Execute and flush (no commit). Sends SQL to the database within
-    # the current transaction. Requires explicit session.commit() by
-    # the caller.
-    result = session.execute(upsert_stmt)
-    session.flush()
-
-    if returning_columns:
-        if query_type in [QueryType.UPSERT, QueryType.INSERT]:
-            returned_values.extend([row._asdict() for row in result.fetchall()])
-
-        elif query_type == QueryType.INSERT_IGNORE:
-            # INSERT ... ON CONFLICT DO NOTHING does not return
-            # ignored rows. Re-query to get all matching rows.
-            conflict_conditions = [
-                and_(
+            if returning_columns:
+                upsert_stmt = upsert_stmt.returning(
                     *[
-                        (
-                            getattr(model, col) == value[col]
-                            if value[col] is not None
-                            else getattr(model, col).is_(None)
-                        )
-                        for col in conflict_columns
+                        getattr(model, col)
+                        for col in returning_columns
                     ]
                 )
-                for value in values
-            ]
-            stmt = select(*[getattr(model, col) for col in returning_columns]).where(
-                or_(*conflict_conditions)
-            )
-            returned_values.extend(
-                [row._asdict() for row in session.execute(stmt).all()]
+
+        elif query_type == QueryType.INSERT:
+            upsert_stmt = insert_stmt
+
+            if returning_columns:
+                upsert_stmt = upsert_stmt.returning(
+                    *[
+                        getattr(model, col)
+                        for col in returning_columns
+                    ]
+                )
+
+        elif query_type == QueryType.INSERT_IGNORE:
+            upsert_stmt = insert_stmt.on_conflict_do_nothing(
+                index_elements=conflict_columns,
             )
 
         else:
-            raise ValueError(f"Invalid query type: {query_type}.")
+            raise ValueError(
+                f"Invalid query type: {query_type}."
+            )
+
+        # Execute (no commit). Sends SQL to the database
+        # within the current transaction. Requires explicit
+        # session.commit() by the caller.
+        result = session.execute(upsert_stmt)
+
+        if returning_columns:
+            if query_type in (
+                QueryType.UPSERT,
+                QueryType.INSERT,
+            ):
+                returned_values.extend(
+                    [row._asdict() for row in result.fetchall()]
+                )
+
+            elif query_type == QueryType.INSERT_IGNORE:
+                # INSERT ... ON CONFLICT DO NOTHING does not
+                # return ignored rows. Re-query to get all
+                # matching rows.
+                conflict_conditions = [
+                    and_(
+                        *[
+                            (
+                                getattr(model, col)
+                                == value[col]
+                                if value[col] is not None
+                                else getattr(
+                                    model, col
+                                ).is_(None)
+                            )
+                            for col in conflict_columns
+                        ]
+                    )
+                    for value in chunk
+                ]
+                stmt = select(
+                    *[
+                        getattr(model, col)
+                        for col in returning_columns
+                    ]
+                ).where(or_(*conflict_conditions))
+                returned_values.extend(
+                    [
+                        row._asdict()
+                        for row in session.execute(stmt).all()
+                    ]
+                )
+
+            else:
+                raise ValueError(
+                    f"Invalid query type: {query_type}."
+                )
 
     return returned_values if returning_columns else None
