@@ -28,10 +28,10 @@ Connection:
 -- Country and entity dimension table sourced from WID.world.
 CREATE TABLE IF NOT EXISTS wid.country (
     -- Identification.
-    country_code VARCHAR(2) NOT NULL
+    country_code TEXT NOT NULL
 
     -- Attributes.
-    , name VARCHAR(255)
+    , name TEXT
 
     -- Audit fields.
     , create_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -53,8 +53,9 @@ COMMENT ON TABLE wid.country IS
 
 -- Column comments.
 COMMENT ON COLUMN wid.country.country_code IS
-'Two-letter entity code from WID (ISO 3166-1 alpha-2 for countries, '
-'WID-specific codes for sub-national and aggregate entities).';
+'WID entity code: two-letter ISO 3166-1 alpha-2 for countries, '
+'hyphenated codes for sub-national regions (e.g. US-CA) and '
+'aggregate groupings (e.g. OA-MER).';
 COMMENT ON COLUMN wid.country.name IS
 'Entity name in English, sourced from WID metadata API.';
 COMMENT ON COLUMN wid.country.create_ts IS
@@ -68,19 +69,19 @@ COMMENT ON COLUMN wid.country.update_ts IS
 -- WID variable dimension table defining the distribution metrics tracked.
 CREATE TABLE IF NOT EXISTS wid.variable (
     -- Identification.
-    variable_code VARCHAR(10) NOT NULL
+    variable_code TEXT NOT NULL
 
     -- WID code components.
-    , concept VARCHAR(5) NOT NULL
-    , series_type VARCHAR(1) NOT NULL
+    , concept TEXT NOT NULL
+    , series_type TEXT NOT NULL
 
     -- Descriptive metadata.
-    , short_name VARCHAR(255) NOT NULL
+    , short_name TEXT NOT NULL
     , description TEXT
     , technical_description TEXT
-    , unit VARCHAR(50) NOT NULL
-    , population_type VARCHAR(50)
-    , age_group VARCHAR(100)
+    , unit TEXT NOT NULL
+    , population_type TEXT
+    , age_group TEXT
 
     -- Audit fields.
     , create_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -127,7 +128,7 @@ COMMENT ON COLUMN wid.variable.update_ts IS
 -- Distribution percentile dimension table.
 CREATE TABLE IF NOT EXISTS wid.percentile (
     -- Identification.
-    percentile_code VARCHAR(20) NOT NULL
+    percentile_code TEXT NOT NULL
 
     -- Range definition.
     , lower_bound NUMERIC(6, 2) NOT NULL
@@ -135,7 +136,7 @@ CREATE TABLE IF NOT EXISTS wid.percentile (
     , width NUMERIC(6, 2) NOT NULL
 
     -- Classification.
-    , granularity VARCHAR(15) NOT NULL
+    , granularity TEXT NOT NULL
 
     -- Audit fields.
     , create_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -190,9 +191,9 @@ COMMENT ON COLUMN wid.percentile.update_ts IS
 -- percentile, and year.
 CREATE TABLE IF NOT EXISTS wid.observation (
     -- Composite primary key.
-    country_code VARCHAR(2) NOT NULL
-    , variable_code VARCHAR(10) NOT NULL
-    , percentile_code VARCHAR(20) NOT NULL
+    country_code TEXT NOT NULL
+    , variable_code TEXT NOT NULL
+    , percentile_code TEXT NOT NULL
     , year INTEGER NOT NULL
 
     -- Measurement.
@@ -259,12 +260,12 @@ COMMENT ON COLUMN wid.observation.update_ts IS
 -- Data quality metadata per country and variable combination.
 CREATE TABLE IF NOT EXISTS wid.data_quality (
     -- Composite primary key.
-    country_code VARCHAR(2) NOT NULL
-    , variable_code VARCHAR(10) NOT NULL
+    country_code TEXT NOT NULL
+    , variable_code TEXT NOT NULL
 
     -- Quality indicators.
     , quality_score INTEGER
-    , imputation VARCHAR(50)
+    , imputation TEXT
     , extrapolation_ranges TEXT
 
     -- Audit fields.
