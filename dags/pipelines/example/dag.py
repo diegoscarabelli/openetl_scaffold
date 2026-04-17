@@ -19,8 +19,8 @@ from pipelines.wid.extract import extract
 from pipelines.wid.process import WIDProcessor
 
 config = AirflowETLConfig(
-    pipeline_id="wid",
-    pipeline_print_name="WID Pipeline",
+    pipeline_id="example",
+    pipeline_print_name="Example Pipeline",
     description=(
         "Extract, process, and store income and wealth "
         "distribution data from the World Inequality "

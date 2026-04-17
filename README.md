@@ -93,8 +93,8 @@ psql -U postgres -d lens -f iam.sql
 psql -U postgres -d lens_dev -f iam.sql
 
 # Step 4: Create pipeline tables.
-psql -U postgres -d lens -f dags/pipelines/wid/tables.ddl
-psql -U postgres -d lens_dev -f dags/pipelines/wid/tables.ddl
+psql -U postgres -d lens -f dags/pipelines/example/tables.ddl
+psql -U postgres -d lens_dev -f dags/pipelines/example/tables.ddl
 ```
 
 > **Note:** If TimescaleDB is not installed, comment out the `CREATE EXTENSION` and matching `COMMENT ON EXTENSION` statements in `schemas.ddl` before running Step 2.
@@ -175,10 +175,10 @@ Contains a subdirectory for each pipeline. Each subdirectory includes:
 - `dag.py` — Airflow 3 entry point.
 - `flow.py` — Prefect 3 entry point.
 
-The included `wid/` pipeline (World Inequality Database) is a working example. Copy and rename it to create new pipelines:
+The included `example/` pipeline (World Inequality Database) is a working example. Copy and rename it to create new pipelines:
 
 ```bash
-cp -r dags/pipelines/wid dags/pipelines/my_pipeline
+cp -r dags/pipelines/example dags/pipelines/my_pipeline
 ```
 
 ### [database.ddl](database.ddl)
@@ -387,14 +387,14 @@ Prefect does not care about the directory name. Putting flows under `dags/` keep
 Run a flow locally:
 
 ```bash
-PYTHONPATH=dags python -m pipelines.wid.flow
+PYTHONPATH=dags python -m pipelines.example.flow
 ```
 
 Deploy to a Prefect server or Cloud from the `dags/` directory:
 
 ```bash
 cd dags
-prefect deploy pipelines/wid/flow.py:flow --name wid-prod --work-pool default
+prefect deploy pipelines/example/flow.py:flow --name example-prod --work-pool default
 ```
 
 ## Database Environments
