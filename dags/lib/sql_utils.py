@@ -292,9 +292,15 @@ def _upsert_values(
     # Clamp chunk_size so total parameters stay within the
     # psycopg3 limit. Use the full model column count because
     # SQLAlchemy fills in columns with Python-side defaults
-    # even when omitted from the values dicts.
+    # even when omitted from the values dicts. For
+    # INSERT_IGNORE with returning_columns, the follow-up
+    # SELECT uses len(conflict_columns) params per row;
+    # account for the worst case across both statements.
     num_cols = len(model.__table__.columns)
-    max_rows = max(1, min(chunk_size, _PSYCOPG_MAX_PARAMS // num_cols))
+    params_per_row = num_cols
+    if query_type == QueryType.INSERT_IGNORE and returning_columns and conflict_columns:
+        params_per_row = max(params_per_row, len(conflict_columns))
+    max_rows = max(1, min(chunk_size, _PSYCOPG_MAX_PARAMS // params_per_row))
 
     for chunk_start in range(0, len(values), max_rows):
         chunk = values[chunk_start : chunk_start + max_rows]
@@ -302,28 +308,18 @@ def _upsert_values(
         insert_stmt = insert(model).values(chunk)
 
         if query_type == QueryType.UPSERT:
-            update_dict = {
-                col: insert_stmt.excluded[col]
-                for col in update_columns
-            }
+            update_dict = {col: insert_stmt.excluded[col] for col in update_columns}
 
             # Automatically inject update_ts if the
             # model has it.
-            if (
-                hasattr(model, "update_ts")
-                and "update_ts" not in update_dict
-            ):
+            if hasattr(model, "update_ts") and "update_ts" not in update_dict:
                 update_dict["update_ts"] = datetime.now(
                     tz=timezone.utc,
                 )
 
             if latest_check_column:
-                excluded_col = insert_stmt.excluded[
-                    latest_check_column
-                ]
-                existing_col = getattr(
-                    model, latest_check_column
-                )
+                excluded_col = insert_stmt.excluded[latest_check_column]
+                existing_col = getattr(model, latest_check_column)
                 where_clause = (
                     excluded_col >= existing_col
                     if latest_check_inclusive
@@ -340,10 +336,7 @@ def _upsert_values(
 
             if returning_columns:
                 upsert_stmt = upsert_stmt.returning(
-                    *[
-                        getattr(model, col)
-                        for col in returning_columns
-                    ]
+                    *[getattr(model, col) for col in returning_columns]
                 )
 
         elif query_type == QueryType.INSERT:
@@ -351,10 +344,7 @@ def _upsert_values(
 
             if returning_columns:
                 upsert_stmt = upsert_stmt.returning(
-                    *[
-                        getattr(model, col)
-                        for col in returning_columns
-                    ]
+                    *[getattr(model, col) for col in returning_columns]
                 )
 
         elif query_type == QueryType.INSERT_IGNORE:
@@ -363,9 +353,7 @@ def _upsert_values(
             )
 
         else:
-            raise ValueError(
-                f"Invalid query type: {query_type}."
-            )
+            raise ValueError(f"Invalid query type: {query_type}.")
 
         # Execute (no commit). Sends SQL to the database
         # within the current transaction. Requires explicit
@@ -377,9 +365,7 @@ def _upsert_values(
                 QueryType.UPSERT,
                 QueryType.INSERT,
             ):
-                returned_values.extend(
-                    [row._asdict() for row in result.fetchall()]
-                )
+                returned_values.extend([row._asdict() for row in result.fetchall()])
 
             elif query_type == QueryType.INSERT_IGNORE:
                 # INSERT ... ON CONFLICT DO NOTHING does not
@@ -389,12 +375,9 @@ def _upsert_values(
                     and_(
                         *[
                             (
-                                getattr(model, col)
-                                == value[col]
+                                getattr(model, col) == value[col]
                                 if value[col] is not None
-                                else getattr(
-                                    model, col
-                                ).is_(None)
+                                else getattr(model, col).is_(None)
                             )
                             for col in conflict_columns
                         ]
@@ -402,21 +385,13 @@ def _upsert_values(
                     for value in chunk
                 ]
                 stmt = select(
-                    *[
-                        getattr(model, col)
-                        for col in returning_columns
-                    ]
+                    *[getattr(model, col) for col in returning_columns]
                 ).where(or_(*conflict_conditions))
                 returned_values.extend(
-                    [
-                        row._asdict()
-                        for row in session.execute(stmt).all()
-                    ]
+                    [row._asdict() for row in session.execute(stmt).all()]
                 )
 
             else:
-                raise ValueError(
-                    f"Invalid query type: {query_type}."
-                )
+                raise ValueError(f"Invalid query type: {query_type}.")
 
     return returned_values if returning_columns else None
