@@ -333,7 +333,7 @@ if __name__ == "__main__":
 
 After running `astro dev init`, configure two files:
 
-1. **`.astro/config.yaml`**: Set custom ports for the Astro metadata database and webserver to avoid conflicts with your analytics database (port 5432) or other Astro projects running concurrently.
+1. **`.astro/config.yaml`**: Astro's internal metadata database defaults to port 5432, which conflicts with the analytics database. Change it to a different port (e.g., 5434). The webserver port (default 8080) may also conflict with other services. Both are set in the committed `config.yaml`.
 
 2. **`docker-compose.override.yml`**: Pass database connection variables (`SQL_DB_*`) and mount the data directory into the scheduler container. The override file sets `DATA_DIR` to `/usr/local/airflow/data` (the container-side mount point) and maps your host-side `DATA_DIR` to that path. Use `host.docker.internal` (Mac/Windows) or `172.17.0.1` (Linux) for `SQL_DB_HOST` to reach the host database from inside the container.
 
