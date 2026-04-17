@@ -9,22 +9,22 @@ Clone this repo to bootstrap a new pipeline repository. It provides an orchestra
 ```
 dags/                    # All pipeline code; matches the DAGs folder Astro/Airflow expect
   lib/                   # Shared utilities (orchestrator-agnostic + thin adapters)
-    pipeline_config.py
-    task_utils.py        # ingest, batch, process_wrapper, store
-    processor.py         # Processor ABC
+    etl_config.py        # ETLConfig base dataclass
+    task_utils.py        # ingest, batch, process_wrapper, store, Processor ABC
     filesystem_utils.py  # DataState, FileSet, ETLDataDirectories
     sql_utils.py         # make_base, fkey, upsert_model_instances, get_engine
-    airflow_utils.py     # create_dag() factory
-    prefect_utils.py     # create_flow() factory
+    airflow_utils.py     # AirflowETLConfig + create_dag() factory
+    prefect_utils.py     # PrefectETLConfig + create_flow() factory
     logging_utils.py
   pipelines/
-    example/             # Template pipeline — copy and rename
+    wid/                 # Example pipeline (WID.world) — copy and rename
       constants.py       # FileType enum of compiled regex patterns
+      extract.py         # API extraction with incremental loading
       process.py         # Processor subclass (domain logic)
       sqla_models.py     # SQLAlchemy ORM models
       tables.ddl         # DDL for this pipeline's tables
-      dag.py             # Airflow 3 entry point (~10 lines)
-      flow.py            # Prefect entry point (~10 lines)
+      dag.py             # Airflow 3 entry point
+      flow.py            # Prefect entry point
 data/                    # Runtime data (gitignored); override with DATA_DIR env var
 database.ddl             # CREATE DATABASE (run once)
 schemas.ddl              # CREATE SCHEMA + extensions
@@ -93,11 +93,13 @@ pip install 'prefect>=3.0'          # Prefect
 ### 5. Create a new pipeline
 
 ```bash
-cp -r dags/pipelines/example dags/pipelines/my_pipeline
+cp -r dags/pipelines/wid dags/pipelines/my_pipeline
 ```
 
 Then edit:
-- `constants.py` — file type regex patterns
+
+- `constants.py` — file type regex patterns and API config
+- `extract.py` — data extraction logic
 - `process.py` — implement `process_file_set()` with domain logic
 - `sqla_models.py` — ORM models matching your DB schema
 - `tables.ddl` — DDL for your tables
@@ -112,14 +114,14 @@ Then edit:
 Run a flow locally:
 
 ```bash
-PYTHONPATH=dags python -m pipelines.example.flow
+PYTHONPATH=dags python -m pipelines.wid.flow
 ```
 
 Or deploy to a Prefect server/Cloud from the `dags/` directory:
 
 ```bash
 cd dags
-prefect deploy pipelines/example/flow.py:flow --name example-prod --work-pool default
+prefect deploy pipelines/wid/flow.py:flow --name wid-prod --work-pool default
 ```
 
 ## Data directories

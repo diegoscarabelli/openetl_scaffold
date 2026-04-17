@@ -26,6 +26,7 @@ pre-summary-newline = true
 recursive = true
 
 [tool.pytest.ini_options]
+pythonpath = ["dags"]
 testpaths = ["tests"]
 
 [tool.sqlfluff.core]

@@ -1,4 +1,13 @@
-"""SQLAlchemy helpers: get_engine, make_base, fkey, upsert_model_instances."""
+"""
+Database utilities for working with SQLAlchemy ORM models and PostgreSQL databases.
+
+This module provides database interaction capabilities including engine creation,
+custom ORM base classes, foreign key helpers, and bulk operations. It includes:
+    - get_engine() for creating engines from environment variables.
+    - make_base() for schema-scoped declarative bases with optional timestamps.
+    - fkey() for fully-qualified foreign key references.
+    - upsert_model_instances() for bulk INSERT ... ON CONFLICT operations.
+"""
 
 from __future__ import annotations
 
@@ -31,6 +40,7 @@ def get_engine(schema: Optional[str] = None) -> Engine:
         the database default search path.
     :return: A configured SQLAlchemy Engine.
     """
+
     load_dotenv()
     url = os.getenv("DATABASE_URL") or (
         "postgresql+psycopg://{user}:{password}@{host}:{port}/{db}".format(
@@ -67,6 +77,7 @@ def make_base(schema: str, include_update_ts: bool = True) -> Type:
             __tablename__ = "connection"
             ...
     """
+
     key = (schema, include_update_ts)
     if key in _base_registry:
         return _base_registry[key]
@@ -113,6 +124,7 @@ def fkey(schema: str, table: str, column: str) -> ForeignKey:
     Example:
         user_id = Column(BigInteger, fkey("auth", "user", "id"), nullable=False)
     """
+
     return ForeignKey(f"{schema}.{table}.{column}")
 
 
@@ -139,6 +151,7 @@ def upsert_model_instances(
         Prevents stale re-ingested data from overwriting newer records.
     :param latest_check_inclusive: Use >= when True, > when False.
     """
+
     if not model_instances:
         return
 

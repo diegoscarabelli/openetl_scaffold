@@ -37,8 +37,8 @@ COMMENT ON EXTENSION timescaledb IS
 ----------------------------------------------------------------------------------------
 -- PIPELINE SCHEMAS
 ----------------------------------------------------------------------------------------
--- Uncomment and duplicate for each schema you add.
+-- Add one CREATE SCHEMA block per pipeline.
 
--- CREATE SCHEMA IF NOT EXISTS example;
--- COMMENT ON SCHEMA example IS
---     'Template pipeline schema. Replace with your own.';
+CREATE SCHEMA IF NOT EXISTS wid;
+COMMENT ON SCHEMA wid IS
+    'World Inequality Database (WID.world) income and wealth distribution data.';
