@@ -22,9 +22,9 @@ from typing import Callable, List
 
 from lib.task_utils import batch, ingest, process_wrapper, store
 
-from .constants import WIDFileTypes
-from .extract import extract as extract_wid
-from .process import WIDProcessor
+from pipelines.wid.constants import WIDFileTypes
+from pipelines.wid.extract import extract as extract_wid
+from pipelines.wid.process import WIDProcessor
 
 logger = logging.getLogger(__name__)
 

@@ -33,7 +33,8 @@ SET standard_conforming_strings = on;
 CREATE DATABASE lens
     ENCODING = 'UTF8'
     LC_COLLATE = 'en_US.UTF-8'
-    LC_CTYPE = 'en_US.UTF-8';
+    LC_CTYPE = 'en_US.UTF-8'
+    TEMPLATE template0;
 
 COMMENT ON DATABASE lens IS
     'Data pipeline analytics database.';
@@ -45,7 +46,8 @@ COMMENT ON DATABASE lens IS
 CREATE DATABASE lens_dev
     ENCODING = 'UTF8'
     LC_COLLATE = 'en_US.UTF-8'
-    LC_CTYPE = 'en_US.UTF-8';
+    LC_CTYPE = 'en_US.UTF-8'
+    TEMPLATE template0;
 
 COMMENT ON DATABASE lens_dev IS
     'Non-production database for development and testing.';
