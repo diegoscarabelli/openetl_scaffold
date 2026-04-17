@@ -455,7 +455,7 @@ class TestProcessWrapper:
     """
 
     @patch("lib.task_utils.Session")
-    @patch("lib.sql_utils.get_engine", return_value=MagicMock())
+    @patch("lib.task_utils.get_engine", return_value=MagicMock())
     def test_process_wrapper_runs(
         self, mock_engine: MagicMock, mock_session_cls: MagicMock
     ) -> None:
@@ -504,7 +504,7 @@ class TestProcessWrapper:
         assert "Constructor failed" in results[0]["error"]
 
     @patch("lib.task_utils.Session")
-    @patch("lib.sql_utils.get_engine", return_value=MagicMock())
+    @patch("lib.task_utils.get_engine", return_value=MagicMock())
     def test_process_wrapper_file_set_failure(
         self, mock_engine: MagicMock, mock_session_cls: MagicMock
     ) -> None:

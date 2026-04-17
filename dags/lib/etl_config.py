@@ -58,7 +58,7 @@ class ETLConfig:
     autoflush: bool = True
 
     # Extended name of the pipeline suitable for print statements.
-    print_name: Optional[str] = None
+    pipeline_print_name: Optional[str] = None
 
     # Description of the pipeline.
     description: Optional[str] = None
@@ -82,8 +82,8 @@ class ETLConfig:
         """
         Post-initialization for ETLConfig.
 
-        Sets default values for print_name, db_schema, and data_dirs. Validates that
-        max_process_tasks and min_file_sets_in_batch are >= 1. Raises ValueError if
+        Sets default values for pipeline_print_name, db_schema, and data_dirs. Validates
+        that max_process_tasks and min_file_sets_in_batch are >= 1. Raises ValueError if
         configuration is invalid.
         """
 
@@ -95,8 +95,8 @@ class ETLConfig:
             raise ValueError("min_file_sets_in_batch must be >= 1.")
         if not issubclass(self.file_types, Enum):
             raise ValueError("file_types must be an Enum subclass.")
-        if self.print_name is None:
-            self.print_name = self.pipeline_id
+        if self.pipeline_print_name is None:
+            self.pipeline_print_name = self.pipeline_id
         if not self.db_schema:
             self.db_schema = self.pipeline_id
         self.data_dirs.set_paths(self.pipeline_id)
@@ -110,5 +110,5 @@ class ETLConfig:
 
         return (
             f"ETLConfig(pipeline_id={self.pipeline_id}, "
-            f"print_name={self.print_name})"
+            f"pipeline_print_name={self.pipeline_print_name})"
         )

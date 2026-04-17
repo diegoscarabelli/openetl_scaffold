@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, Optional, Union
 import pendulum
 from airflow import DAG
 from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk.exceptions import AirflowSkipException
 
 from lib.etl_config import ETLConfig
 from lib.task_utils import batch, ingest, process_wrapper, store
@@ -137,7 +138,9 @@ class AirflowETLConfig(ETLConfig):
         """
 
         return (
-            f"AirflowETLConfig(dag_id={self.dag_id}, " f"print_name={self.print_name})"
+            f"AirflowETLConfig(dag_id={self.dag_id}, "
+            f"pipeline_print_name="
+            f"{self.pipeline_print_name})"
         )
 
 
@@ -146,7 +149,10 @@ class AirflowETLConfig(ETLConfig):
 # -----------------------------------------------------------------------
 
 
-def create_dag(config: AirflowETLConfig) -> DAG:
+def create_dag(
+    config: AirflowETLConfig,
+    apply_default_task_sequence: bool = True,
+) -> DAG:
     """
     Generate an Airflow DAG for the pipeline using the configuration.
 
@@ -155,11 +161,17 @@ def create_dag(config: AirflowETLConfig) -> DAG:
     parameter in order to allow dynamic configuration of the tasks at
     runtime (such as Jinja templated fields).
 
-    The ingest task translates RuntimeError (raised by the
-    orchestrator-agnostic task_utils.ingest when no files are found)
-    into AirflowSkipException so the run is marked skipped, not failed.
+    If you want to set a different order for the tasks (or include
+    additional tasks), you can do the following:
+
+    1. Turn off ``apply_default_task_sequence`` to prevent the default
+       task order from being set.
+    2. Use ``dag.get_task(<task_id>)`` to get a task by its ID and set
+       the order using ``task1 >> task2``.
 
     :param config: Airflow-specific pipeline configuration.
+    :param apply_default_task_sequence: If True, sets the default task
+        dependency sequence.
     :return: An Airflow DAG object with the standard task sequence.
     """
 
@@ -172,8 +184,6 @@ def create_dag(config: AirflowETLConfig) -> DAG:
         try:
             return fn(config, **kwargs)
         except RuntimeError:
-            from airflow.exceptions import AirflowSkipException
-
             raise AirflowSkipException("No files to process.")
 
     def _batch(config: AirflowETLConfig, **kwargs: Any) -> list:
@@ -228,6 +238,7 @@ def create_dag(config: AirflowETLConfig) -> DAG:
             op_kwargs={
                 "config": config,
                 "run_id": "{{ dag_run.run_id }}",
+                "start_date": "{{ dag_run.start_date }}",
                 **config.extra_processor_init_kwargs,
             },
             doc_md=(
@@ -261,6 +272,7 @@ def create_dag(config: AirflowETLConfig) -> DAG:
             ),
         )
 
-        task_ingest >> task_batch >> task_process >> task_store
+        if apply_default_task_sequence:
+            task_ingest >> task_batch >> task_process >> task_store
 
     return dag

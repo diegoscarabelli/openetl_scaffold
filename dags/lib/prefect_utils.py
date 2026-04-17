@@ -16,7 +16,11 @@ import logging
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional
 
+from prefect import flow, task
+from prefect.cache_policies import NONE
+
 from lib.etl_config import ETLConfig
+from lib.task_utils import batch, ingest, process_wrapper, store
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +68,7 @@ class PrefectETLConfig(ETLConfig):
 
         return (
             f"PrefectETLConfig(pipeline_id={self.pipeline_id}, "
-            f"print_name={self.print_name})"
+            f"pipeline_print_name={self.pipeline_print_name})"
         )
 
 
@@ -83,11 +87,6 @@ def create_flow(config: PrefectETLConfig) -> Callable:
     :param config: Prefect-specific pipeline configuration.
     :return: A Prefect flow callable.
     """
-
-    from prefect import flow, task
-    from prefect.cache_policies import NONE
-
-    from lib.task_utils import batch, ingest, process_wrapper, store
 
     @task(
         cache_policy=NONE,
@@ -141,7 +140,6 @@ def create_flow(config: PrefectETLConfig) -> Callable:
         retries=config.flow_retries,
         retry_delay_seconds=config.flow_retry_delay_seconds,
         timeout_seconds=config.flow_timeout_seconds,
-        tags=config.tags,
     )
     def pipeline_flow() -> None:
         count = _ingest()

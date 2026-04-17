@@ -13,7 +13,7 @@ import pytest
 from dotenv import load_dotenv
 from sqlalchemy import Boolean, Column, Integer, String, create_engine, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session
 
 # Load environment variables from .env file.
 load_dotenv()
@@ -23,7 +23,11 @@ TEST_DB_URL = os.getenv(
     "postgresql+psycopg://postgres:postgres@localhost:5432/postgres",
 )
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    """
+    Declarative base for test ORM models.
+    """
 
 
 class MyTest(Base):
@@ -97,6 +101,6 @@ def db_session(db_engine: Engine) -> Generator[Session, None, None]:
     :return: The SQLAlchemy session instance.
     """
 
-    session = sessionmaker(bind=db_engine)()
+    session = Session(db_engine)
     yield session
     session.close()

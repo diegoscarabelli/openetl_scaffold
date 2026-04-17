@@ -28,7 +28,7 @@ Connection:
 -- Country and entity dimension table sourced from WID.world.
 CREATE TABLE IF NOT EXISTS wid.country (
     -- Identification.
-    country_code TEXT NOT NULL
+    country_code TEXT PRIMARY KEY
 
     -- Attributes.
     , name TEXT
@@ -36,8 +36,6 @@ CREATE TABLE IF NOT EXISTS wid.country (
     -- Audit fields.
     , create_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
     , update_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
-
-    , CONSTRAINT country_pkey PRIMARY KEY (country_code)
 );
 
 -- Indexes for country table.
@@ -69,7 +67,7 @@ COMMENT ON COLUMN wid.country.update_ts IS
 -- WID variable dimension table defining the distribution metrics tracked.
 CREATE TABLE IF NOT EXISTS wid.variable (
     -- Identification.
-    variable_code TEXT NOT NULL
+    variable_code TEXT PRIMARY KEY
 
     -- WID code components.
     , concept TEXT NOT NULL
@@ -86,8 +84,6 @@ CREATE TABLE IF NOT EXISTS wid.variable (
     -- Audit fields.
     , create_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
     , update_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
-
-    , CONSTRAINT variable_pkey PRIMARY KEY (variable_code)
 );
 
 -- Table comment.
@@ -98,12 +94,17 @@ COMMENT ON TABLE wid.variable IS
 
 -- Column comments.
 COMMENT ON COLUMN wid.variable.variable_code IS
-'WID sixlet code: one-letter series type prefix plus five-letter '
-'concept code (e.g. sptinc = share of pre-tax national income).';
+'WID sixlet code: concatenation of series_type + concept '
+'(e.g. sptinc = s + ptinc, meaning share of pre-tax national '
+'income). Primary key used across observation and data_quality.';
 COMMENT ON COLUMN wid.variable.concept IS
-'Five-letter WID concept code (e.g. ptinc, hweal).';
+'Five-letter WID concept identifying the economic quantity '
+'(e.g. ptinc = pre-tax national income, hweal = net personal '
+'wealth). Shared across series types: sptinc and aptinc both '
+'have concept ptinc.';
 COMMENT ON COLUMN wid.variable.series_type IS
-'One-letter WID series type (s=share, a=average, t=threshold, '
+'One-letter WID series type indicating the statistical measure '
+'applied to the concept (s=share, a=average, t=threshold, '
 'g=gini, m=total, w=ratio).';
 COMMENT ON COLUMN wid.variable.short_name IS
 'Human-readable short name for the variable.';
@@ -114,9 +115,13 @@ COMMENT ON COLUMN wid.variable.technical_description IS
 COMMENT ON COLUMN wid.variable.unit IS
 'Measurement unit (e.g. share, local currency).';
 COMMENT ON COLUMN wid.variable.population_type IS
-'Population unit definition (e.g. equal-split adults).';
+'WID pop code: statistical unit used for ranking and '
+'attribution (j=equal-split adults, i=individuals, '
+'t=tax units, m=males, f=females, e=employed).';
 COMMENT ON COLUMN wid.variable.age_group IS
-'Age group definition (e.g. individuals over age 20).';
+'WID age code: 3-digit code defining the age demographic '
+'included in the distribution (992=adults 20+, 999=all ages, '
+'996=working-age 20-64).';
 COMMENT ON COLUMN wid.variable.create_ts IS
 'Timestamp when the record was created in the database.';
 COMMENT ON COLUMN wid.variable.update_ts IS
@@ -128,7 +133,7 @@ COMMENT ON COLUMN wid.variable.update_ts IS
 -- Distribution percentile dimension table.
 CREATE TABLE IF NOT EXISTS wid.percentile (
     -- Identification.
-    percentile_code TEXT NOT NULL
+    percentile_code TEXT PRIMARY KEY
 
     -- Range definition.
     , lower_bound NUMERIC(6, 2) NOT NULL
@@ -142,13 +147,9 @@ CREATE TABLE IF NOT EXISTS wid.percentile (
     , create_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
     , update_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
 
-    , CONSTRAINT percentile_pkey PRIMARY KEY (percentile_code)
-    , CONSTRAINT percentile_bounds_check
-    CHECK (upper_bound > lower_bound)
-    , CONSTRAINT percentile_width_check
-    CHECK (width > 0)
-    , CONSTRAINT percentile_granularity_check
-    CHECK (granularity IN (
+    , CHECK (upper_bound > lower_bound)
+    , CHECK (width > 0)
+    , CHECK (granularity IN (
         'decile', 'percentile', 'mille', 'basis_point'
     ))
 );
@@ -168,8 +169,8 @@ COMMENT ON TABLE wid.percentile IS
 
 -- Column comments.
 COMMENT ON COLUMN wid.percentile.percentile_code IS
-'WID percentile range code (e.g. p0p10 = bottom 10%%, '
-'p99.99p100 = top 0.01%%).';
+'WID percentile range code (e.g. p0p10 = bottom 10%, '
+'p99.99p100 = top 0.01%).';
 COMMENT ON COLUMN wid.percentile.lower_bound IS
 'Lower bound of the percentile range (0-100 scale).';
 COMMENT ON COLUMN wid.percentile.upper_bound IS
@@ -177,8 +178,8 @@ COMMENT ON COLUMN wid.percentile.upper_bound IS
 COMMENT ON COLUMN wid.percentile.width IS
 'Width of the percentile range in percentage points.';
 COMMENT ON COLUMN wid.percentile.granularity IS
-'Granularity level: decile (10%%), percentile (1%%), '
-'mille (0.1%%), or basis_point (0.01%%).';
+'Granularity level: decile (10%), percentile (1%), '
+'mille (0.1%), or basis_point (0.01%).';
 COMMENT ON COLUMN wid.percentile.create_ts IS
 'Timestamp when the record was created in the database.';
 COMMENT ON COLUMN wid.percentile.update_ts IS
@@ -190,10 +191,11 @@ COMMENT ON COLUMN wid.percentile.update_ts IS
 -- Fact table storing distribution values per country, variable,
 -- percentile, and year.
 CREATE TABLE IF NOT EXISTS wid.observation (
-    -- Composite primary key.
-    country_code TEXT NOT NULL
-    , variable_code TEXT NOT NULL
+    -- Composite key columns.
+    country_code TEXT NOT NULL REFERENCES wid.country (country_code)
+    , variable_code TEXT NOT NULL REFERENCES wid.variable (variable_code)
     , percentile_code TEXT NOT NULL
+    REFERENCES wid.percentile (percentile_code)
     , year INTEGER NOT NULL
 
     -- Measurement.
@@ -202,27 +204,12 @@ CREATE TABLE IF NOT EXISTS wid.observation (
     -- Audit fields.
     , create_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
     , update_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
-
-    -- Constraints.
-    , CONSTRAINT observation_pkey PRIMARY KEY (
-        country_code, variable_code, percentile_code, year
-    )
-    , CONSTRAINT observation_country_fkey
-    FOREIGN KEY (country_code) REFERENCES wid.country (country_code)
-    , CONSTRAINT observation_variable_fkey
-    FOREIGN KEY (variable_code) REFERENCES wid.variable (variable_code)
-    , CONSTRAINT observation_percentile_fkey
-    FOREIGN KEY (percentile_code)
-    REFERENCES wid.percentile (percentile_code)
 );
 
 -- Indexes for observation table.
-CREATE INDEX IF NOT EXISTS observation_country_code_idx
-ON wid.observation (country_code);
-CREATE INDEX IF NOT EXISTS observation_variable_code_idx
-ON wid.observation (variable_code);
-CREATE INDEX IF NOT EXISTS observation_percentile_code_idx
-ON wid.observation (percentile_code);
+CREATE UNIQUE INDEX IF NOT EXISTS
+observation_country_code_variable_code_percentile_code_year_idx
+ON wid.observation (country_code, variable_code, percentile_code, year);
 CREATE INDEX IF NOT EXISTS observation_year_idx
 ON wid.observation (year);
 CREATE INDEX IF NOT EXISTS observation_create_ts_brin_idx
@@ -243,12 +230,12 @@ COMMENT ON COLUMN wid.observation.variable_code IS
 'distribution metric (e.g. sptinc, shweal).';
 COMMENT ON COLUMN wid.observation.percentile_code IS
 'References wid.percentile(percentile_code). Identifies the '
-'population bracket (e.g. p99p100 = top 1%%).';
+'population bracket (e.g. p99p100 = top 1%).';
 COMMENT ON COLUMN wid.observation.year IS
 'Calendar year of the observation.';
 COMMENT ON COLUMN wid.observation.value IS
 'Distribution value. For share variables, a fraction where '
-'0.19 means 19%% of total income or wealth.';
+'0.19 means 19% of total income or wealth.';
 COMMENT ON COLUMN wid.observation.create_ts IS
 'Timestamp when the record was created in the database.';
 COMMENT ON COLUMN wid.observation.update_ts IS
@@ -259,9 +246,10 @@ COMMENT ON COLUMN wid.observation.update_ts IS
 
 -- Data quality metadata per country and variable combination.
 CREATE TABLE IF NOT EXISTS wid.data_quality (
-    -- Composite primary key.
-    country_code TEXT NOT NULL
+    -- Composite key columns.
+    country_code TEXT NOT NULL REFERENCES wid.country (country_code)
     , variable_code TEXT NOT NULL
+    REFERENCES wid.variable (variable_code)
 
     -- Quality indicators.
     , quality_score INTEGER
@@ -273,19 +261,13 @@ CREATE TABLE IF NOT EXISTS wid.data_quality (
     , update_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
 
     -- Constraints.
-    , CONSTRAINT data_quality_pkey PRIMARY KEY (
-        country_code, variable_code
-    )
-    , CONSTRAINT data_quality_country_fkey
-    FOREIGN KEY (country_code) REFERENCES wid.country (country_code)
-    , CONSTRAINT data_quality_variable_fkey
-    FOREIGN KEY (variable_code)
-    REFERENCES wid.variable (variable_code)
-    , CONSTRAINT data_quality_score_check
-    CHECK (quality_score BETWEEN 1 AND 5)
+    , CHECK (quality_score BETWEEN 1 AND 5)
 );
 
 -- Indexes for data_quality table.
+CREATE UNIQUE INDEX IF NOT EXISTS
+data_quality_country_code_variable_code_idx
+ON wid.data_quality (country_code, variable_code);
 CREATE INDEX IF NOT EXISTS data_quality_quality_score_idx
 ON wid.data_quality (quality_score);
 

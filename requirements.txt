@@ -1,11 +1,11 @@
 # Core pipeline dependencies. Install into your project virtualenv.
 
 python-dotenv>=1.0
-sqlalchemy>=2.0
+sqlalchemy>=2.0,<3.0
 psycopg[binary]>=3.1
 pandas>=2.0
 pyarrow>=14.0
 
-# Orchestrator — uncomment one:
-# prefect>=3.0
-# apache-airflow>=3.0
+# Orchestrators
+apache-airflow>=3.0
+prefect>=3.0

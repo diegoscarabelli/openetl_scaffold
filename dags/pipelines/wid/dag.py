@@ -20,7 +20,7 @@ from .process import WIDProcessor
 
 config = AirflowETLConfig(
     pipeline_id="wid",
-    print_name="WID Pipeline",
+    pipeline_print_name="WID Pipeline",
     description=(
         "Extract, process, and store income and wealth "
         "distribution data from the World Inequality "

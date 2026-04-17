@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from lib.etl_config import ETLConfig
 from lib.filesystem_utils import DataState, FileSet
 from lib.logging_utils import LOGGER
+from lib.sql_utils import get_engine
 
 
 def ingest(config: ETLConfig, **kwargs: Any) -> int:
@@ -398,8 +399,6 @@ class Processor(ABC):
         :return: List of result dicts, one per FileSet. Each has
             keys "files", "success", and "error".
         """
-
-        from lib.sql_utils import get_engine
 
         engine = get_engine(schema=self.config.db_schema)
         results: List[Dict[str, Any]] = []
