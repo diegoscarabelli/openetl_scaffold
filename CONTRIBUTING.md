@@ -235,7 +235,7 @@ pytest -v
 
 #### Test Environment
 
-Tests require a PostgreSQL database. Point `SQL_DB_NAME` in `.env` at `system2_dev` (created by `database.ddl`).
+Tests require a PostgreSQL database. Point `SQL_DB_NAME` in `.env` at `lens_dev` (created by `database.ddl`).
 
 ### Documentation
 

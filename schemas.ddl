@@ -1,12 +1,12 @@
 /*
 ========================================================================================
-SYSTEM2 DATABASE SCHEMA INITIALIZATION
+LENS DATABASE SCHEMA INITIALIZATION
 ========================================================================================
 Description: This script creates PostgreSQL extensions and per-pipeline schemas
-             for the `system2` database. Must be executed after database.ddl.
+             for the `lens` database. Must be executed after database.ddl.
 
 Prerequisites:
-  - The `system2` database must already exist (created by database.ddl).
+  - The `lens` database must already exist (created by database.ddl).
   - PostgreSQL must be running.
   - Must have superuser privileges (typically the `postgres` user).
 
@@ -19,10 +19,10 @@ Optional Components:
     * TimescaleDB: Time-series database capabilities.
 
 Connection:
-  - Connect to the system2 database to create extensions and schemas:
-    psql -U postgres -d system2 -f schemas.ddl
+  - Connect to the lens database to create extensions and schemas:
+    psql -U postgres -d lens -f schemas.ddl
   - Alternative with TCP/IP and password authentication:
-    psql -h localhost -U postgres -d system2 -f schemas.ddl
+    psql -h localhost -U postgres -d lens -f schemas.ddl
 ========================================================================================
 */
 

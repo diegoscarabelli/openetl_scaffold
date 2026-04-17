@@ -1,12 +1,12 @@
 /*
 ========================================================================================
-SYSTEM2 DATABASE IDENTITY AND ACCESS MANAGEMENT (IAM)
+LENS DATABASE IDENTITY AND ACCESS MANAGEMENT (IAM)
 ========================================================================================
-Description: This script creates roles, login users, and permissions for the `system2`
+Description: This script creates roles, login users, and permissions for the `lens`
              database. Must be executed after schemas.ddl.
 
 Prerequisites:
-  - The `system2` database must already exist (created by database.ddl).
+  - The `lens` database must already exist (created by database.ddl).
   - Schemas should be created (created by schemas.ddl).
   - PostgreSQL 14 or newer (uses `pg_read_all_data` and `pg_write_all_data`
     predefined roles introduced in PostgreSQL 14).
@@ -27,10 +27,10 @@ Design Notes:
     them first or skip this step.
 
 Connection:
-  - Connect to the `system2` database to create users and grant permissions:
-    psql -U postgres -d system2 -f iam.sql
+  - Connect to the `lens` database to create users and grant permissions:
+    psql -U postgres -d lens -f iam.sql
   - Alternative with TCP/IP and password authentication:
-    psql -h localhost -U postgres -d system2 -f iam.sql
+    psql -h localhost -U postgres -d lens -f iam.sql
 ========================================================================================
 */
 

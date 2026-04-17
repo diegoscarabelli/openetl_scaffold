@@ -1,8 +1,8 @@
 /*
 ========================================================================================
-SYSTEM2 DATABASE CREATION
+LENS DATABASE CREATION
 ========================================================================================
-Description: This script creates the `system2` and `system2_dev` databases for data
+Description: This script creates the `lens` and `lens_dev` databases for data
              pipeline operations. Must be executed before schemas.ddl and pipeline
              table scripts.
 
@@ -11,14 +11,14 @@ Prerequisites:
   - Must have superuser privileges (typically the `postgres` user).
 
 Connection:
-  - Connect to the default `postgres` database to create the `system2` database:
+  - Connect to the default `postgres` database to create the `lens` database:
     psql -U postgres -d postgres -f database.ddl
   - Alternative with TCP/IP and password authentication:
     psql -h localhost -U postgres -d postgres -f database.ddl
 
 Notes:
   - Character encoding and collation are set for UTF-8 support.
-  - Replace `system2` below with your preferred database name.
+  - Replace `lens` below with your preferred database name.
 ========================================================================================
 */
 
@@ -30,22 +30,22 @@ SET standard_conforming_strings = on;
 -- DATABASE CREATION
 ----------------------------------------------------------------------------------------
 
-CREATE DATABASE system2
+CREATE DATABASE lens
     ENCODING = 'UTF8'
     LC_COLLATE = 'en_US.UTF-8'
     LC_CTYPE = 'en_US.UTF-8';
 
-COMMENT ON DATABASE system2 IS
+COMMENT ON DATABASE lens IS
     'Data pipeline analytics database.';
 
 ----------------------------------------------------------------------------------------
 -- DEVELOPMENT DATABASE
 ----------------------------------------------------------------------------------------
 
-CREATE DATABASE system2_dev
+CREATE DATABASE lens_dev
     ENCODING = 'UTF8'
     LC_COLLATE = 'en_US.UTF-8'
     LC_CTYPE = 'en_US.UTF-8';
 
-COMMENT ON DATABASE system2_dev IS
+COMMENT ON DATABASE lens_dev IS
     'Non-production database for development and testing.';

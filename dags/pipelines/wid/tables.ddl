@@ -18,7 +18,7 @@ Prerequisites:
   - The wid schema must already exist (created by schemas.ddl).
 
 Connection:
-  - psql -U postgres -d system2 -f pipelines/wid/tables.ddl
+  - psql -U postgres -d lens -f pipelines/wid/tables.ddl
 ========================================================================================
 */
 
