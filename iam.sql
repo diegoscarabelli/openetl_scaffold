@@ -20,7 +20,7 @@ Design Notes:
     No per-schema `GRANT` is needed when adding a new pipeline schema.
   - `pg_write_all_data` does NOT include `TRUNCATE`. Pipelines that truncate
     tables must be granted `TRUNCATE` explicitly on those tables.
-  - A single generic `system2_pipelines` user handles all pipeline writes.
+  - A single generic `data_pipelines` user handles all pipeline writes.
     For stronger per-pipeline isolation, replace it with per-pipeline users
     and scope permissions per schema.
   - Re-running this script will fail if roles or users already exist; drop
@@ -58,7 +58,7 @@ COMMENT ON ROLE read_only IS
 ----------------------------------------------------------------------------------------
 
 -- Login user for pipeline read and write operations across all schemas.
-CREATE USER system2_pipelines WITH PASSWORD '<REDACTED>';
-GRANT pg_read_all_data, pg_write_all_data TO system2_pipelines;
-COMMENT ON ROLE system2_pipelines IS
+CREATE USER data_pipelines WITH PASSWORD '<REDACTED>';
+GRANT pg_read_all_data, pg_write_all_data TO data_pipelines;
+COMMENT ON ROLE data_pipelines IS
     'Service user for data pipeline operations (read + write across all schemas).';
