@@ -22,16 +22,16 @@ from typing import Callable, List
 
 from lib.task_utils import batch, ingest, process_wrapper, store
 
-from pipelines.wid.constants import WIDFileTypes
-from pipelines.wid.extract import extract as extract_wid
-from pipelines.wid.process import WIDProcessor
+from pipelines.example.constants import WIDFileTypes
+from pipelines.example.extract import extract as extract_wid
+from pipelines.example.process import WIDProcessor
 
 logger = logging.getLogger(__name__)
 
 
 def _build_flow() -> Callable:
     """
-    Build the WID Prefect flow with extract prepended.
+    Build the example Prefect flow with extract prepended.
 
     :return: A Prefect flow callable.
     """

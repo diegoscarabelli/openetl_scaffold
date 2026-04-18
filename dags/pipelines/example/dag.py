@@ -14,9 +14,9 @@ from airflow.providers.standard.operators.python import (
 
 from lib.airflow_utils import AirflowETLConfig, create_dag
 
-from pipelines.wid.constants import WIDFileTypes
-from pipelines.wid.extract import extract
-from pipelines.wid.process import WIDProcessor
+from pipelines.example.constants import WIDFileTypes
+from pipelines.example.extract import extract
+from pipelines.example.process import WIDProcessor
 
 config = AirflowETLConfig(
     pipeline_id="example",
