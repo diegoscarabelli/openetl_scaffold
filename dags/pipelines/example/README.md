@@ -48,7 +48,7 @@ This pipeline includes both an [Airflow 3 DAG](dag.py) and a [Prefect 3 flow](fl
 
 The extract task calls the [`extract()`](extract.py) function, which downloads data from the WID.world REST API and saves JSON files to the ingest directory.
 
-**Incremental extraction:** The function queries `SELECT MAX(year) FROM observation` against the pipeline's database schema to determine what data already exists. On first run (empty database or missing table), all available years are downloaded. On subsequent runs, only data from the max stored year onward is re-extracted (inclusive, since WID may revise recent estimates).
+**Incremental extraction:** The function queries `SELECT MAX(year) FROM observation` against the pipeline's [database schema](tables.ddl) to determine what data already exists. On first run (empty database or missing table), all available years are downloaded. On subsequent runs, only data from the max stored year onward is re-extracted (inclusive, since WID may revise recent estimates).
 
 **Extraction sequence:**
 
