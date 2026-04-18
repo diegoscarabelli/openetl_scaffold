@@ -34,50 +34,13 @@ This pipeline tracks two distribution metrics:
 - **Milles** (10 ranges): p99p99.1 through p99.9p100.
 - **Basis points** (10 ranges): p99.9p99.91 through p99.99p100.
 
-## Airflow DAG
+## Pipeline
 
-- [DAG code](dag.py)
+This pipeline includes both an [Airflow 3 DAG](dag.py) and a [Prefect 3 flow](flow.py) entry point. Both implementations share the same extraction, processing, and storage logic described in this section. The orchestrator-specific configuration and task wiring are covered in the [Airflow DAG](#airflow-dag) and [Prefect Flow](#prefect-flow) sections.
 
-- DAG schedule: `None` (manual trigger only).
-
-- DAG ID: `example`
-
+- Pipeline ID: `example`
+- Schedule: `None` (manual trigger only).
 - Task dependency: `extract >> ingest >> batch >> process >> store`
-
-The DAG uses [`AirflowETLConfig`](../../lib/airflow_utils.py) with [`WIDFileTypes`](constants.py) for file type coordination, a `process_format` of `r".*\.json$"`, and `db_schema="wid"`. Task execution timeout is set to 2 hours.
-
-```python
-config = AirflowETLConfig(
-    pipeline_id="example",
-    pipeline_print_name="Example Pipeline",
-    description="...",
-    file_types=WIDFileTypes,
-    processor_class=WIDProcessor,
-    dag_schedule_interval=None,
-    process_format=r".*\.json$",
-    db_schema="wid",
-    task_execution_timeout=timedelta(hours=2),
-)
-```
-
-The standard four-task DAG is assembled via [`create_dag(config)`](../../lib/airflow_utils.py), then an extract task is prepended using a `PythonOperator`:
-
-```python
-dag = create_dag(config)
-
-with dag:
-    task_extract = PythonOperator(
-        task_id="extract",
-        python_callable=extract,
-        do_xcom_push=False,
-        execution_timeout=timedelta(hours=2),
-        op_kwargs={
-            "ingest_dir": config.data_dirs.ingest,
-            "db_schema": "wid",
-        },
-    )
-    task_extract >> dag.get_task("ingest")
-```
 
 ### Extract task
 
@@ -131,6 +94,7 @@ The process task uses the [`WIDProcessor`](process.py) class, which inherits fro
 The schema contains 5 tables organized into dimensions, facts, and metadata:
 
 **Dimensions (3 tables)**
+
 ```
 country (entity dimension)
 variable (metric dimension)
@@ -138,20 +102,24 @@ percentile (distribution bracket dimension)
 ```
 
 **Facts (1 table)**
+
 ```
 observation (distribution values)
 ├── FK → country.country_code
 ├── FK → variable.variable_code
 └── FK → percentile.percentile_code
 ```
+
 *Unique index: `(country_code, variable_code, percentile_code, year)`*
 
 **Metadata (1 table)**
+
 ```
 data_quality (estimation methodology)
 ├── FK → country.country_code
 └── FK → variable.variable_code
 ```
+
 *Unique index: `(country_code, variable_code)`*
 
 **Processing flow:**
@@ -207,17 +175,48 @@ The pipeline uses a single upsert method ([`upsert_model_instances`](../../lib/s
 
 The store task uses the standard [`store()`](../../lib/task_utils.py) function from the [Standard Pipeline](../../../README.md#standard-pipeline) pattern. Successfully processed files are moved to `store/` and failed files to `quarantine/`.
 
+## Airflow DAG
+
+[Code](dag.py)
+
+The DAG uses [`AirflowETLConfig`](../../lib/airflow_utils.py) with [`WIDFileTypes`](constants.py) for file type coordination and a task execution timeout of 2 hours. The standard four-task DAG is assembled via [`create_dag(config)`](../../lib/airflow_utils.py), then an extract task is prepended using a `PythonOperator`:
+
+```python
+config = AirflowETLConfig(
+    pipeline_id="example",
+    pipeline_print_name="Example Pipeline",
+    description="...",
+    file_types=WIDFileTypes,
+    processor_class=WIDProcessor,
+    dag_schedule_interval=None,
+    process_format=r".*\.json$",
+    db_schema="wid",
+    task_execution_timeout=timedelta(hours=2),
+)
+
+dag = create_dag(config)
+
+with dag:
+    task_extract = PythonOperator(
+        task_id="extract",
+        python_callable=extract,
+        do_xcom_push=False,
+        execution_timeout=timedelta(hours=2),
+        op_kwargs={
+            "ingest_dir": config.data_dirs.ingest,
+            "db_schema": "wid",
+        },
+    )
+    task_extract >> dag.get_task("ingest")
+```
+
+Trigger the `example` DAG manually from the Airflow UI.
+
 ## Prefect Flow
 
-- [Flow code](flow.py)
+[Code](flow.py)
 
-- Flow name: `example`
-
-- Flow tags: `example`, `wid`, `inequality`
-
-- Task dependency: `extract >> ingest >> batch >> process >> store`
-
-The flow uses [`PrefectETLConfig`](../../lib/prefect_utils.py) with the same pipeline parameters as the Airflow DAG (same `WIDFileTypes`, `WIDProcessor`, `process_format`, `db_schema`).
+The flow uses [`PrefectETLConfig`](../../lib/prefect_utils.py) with the same pipeline parameters as the Airflow DAG. It is built inside a `_build_flow()` factory function to defer Prefect imports until runtime. Each ETL step is wrapped as a Prefect `@task` with `cache_policy=NONE` (no result caching between runs).
 
 ```python
 config = PrefectETLConfig(
@@ -232,15 +231,11 @@ config = PrefectETLConfig(
 )
 ```
 
-The flow is built inside a `_build_flow()` factory function to defer Prefect imports until runtime. Each ETL step is wrapped as a Prefect `@task` with `cache_policy=NONE` (no result caching between runs).
+**Differences from the Airflow DAG:**
 
-**Task-level behavior:**
-
-- **`_extract`**: Calls the same [`extract()`](extract.py) function used by the Airflow DAG. Timeout set to 7200 seconds (2 hours). Returns the number of files saved.
-- **`_ingest`**: Calls the standard [`ingest()`](../../lib/task_utils.py). Catches `RuntimeError` (no files found) and returns 0, which causes the flow to exit early without error.
-- **`_batch`**: Calls the standard [`batch()`](../../lib/task_utils.py). Returns serialized batch data.
-- **`_process`**: Calls [`process_wrapper()`](../../lib/task_utils.py). Invoked via `.map(batches)` for parallel processing across batches. Each batch gets its own Prefect task run.
-- **`_store`**: Calls the standard [`store()`](../../lib/task_utils.py). Collects results from all process futures using `f.result(raise_on_failure=False)` to ensure store runs even if individual batches failed.
+- **Parallel processing**: The process task uses `.map(batches)` to distribute batches across concurrent Prefect task runs. In Airflow, this is handled by dynamic task mapping via `create_dag()`.
+- **Early exit on empty ingest**: The `_ingest` task catches `RuntimeError` (no files found) and returns 0, which causes the flow to exit early without error. In Airflow, the ingest task raises and the DAG run fails.
+- **Error collection**: The `_store` task collects process results using `f.result(raise_on_failure=False)` to ensure store runs even if individual batches failed.
 
 **Running locally:**
 
