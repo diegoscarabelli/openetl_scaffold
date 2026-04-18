@@ -111,23 +111,20 @@ psql -U postgres -d lens_dev -f dags/pipelines/example/tables.ddl
 
 Grants are blanket across all non-system schemas (including future ones), so no further IAM changes are needed when adding a new pipeline schema.
 
-### Install Python Dependencies
+### Python Environment
+
+Uncomment your orchestrator in [`requirements.txt`](requirements.txt) (Airflow, Prefect, or both for evaluation), then create the virtual environment:
 
 ```bash
-pip install -r requirements.txt
+# Create .venv/ and install all dependencies (core + dev + orchestrator).
+make venv
 
-# Plus your orchestrator:
-pip install 'prefect>=3.0'            # Prefect
-# or: pip install 'apache-airflow>=3.0'  # Airflow
+# Activate it (the Makefile targets use .venv/bin/python automatically,
+# but you need an active venv for running pipelines or ad-hoc commands).
+source .venv/bin/activate
 ```
 
-### Development Environment Setup
-
-Install the development dependencies for testing, linting, and formatting:
-
-```bash
-pip install -r requirements_dev.txt
-```
+`make venv` runs `python -m venv .venv` (if `.venv/` does not exist) and then `pip install -r requirements_dev.txt`, which includes [`requirements.txt`](requirements.txt). To recreate from scratch, run `make delete-venv && make venv`.
 
 Set up pre-commit hooks:
 
@@ -361,6 +358,8 @@ astro dev restart
 astro dev stop
 ```
 
+The Airflow web UI is available at the URL printed by `astro dev start` (by default `http://localhost:8081` for this project). Default credentials: `admin` / `admin`.
+
 ##### Trigger and Monitor DAGs
 
 ```bash
@@ -384,17 +383,28 @@ The top-level folder is called `dags/` because Astro CLI and native Airflow both
 
 Prefect does not care about the directory name. Putting flows under `dags/` keeps both orchestrators working with zero configuration overrides.
 
-Run a flow locally:
+Start a local Prefect server (runs on `http://127.0.0.1:4200`):
 
 ```bash
-PYTHONPATH=dags python -m pipelines.example.flow
+pip install 'prefect>=3.0'
+prefect server start
+```
+
+The Prefect web UI is available at `http://127.0.0.1:4200` once the server is running.
+
+Run a flow against the local server:
+
+```bash
+PREFECT_API_URL=http://127.0.0.1:4200/api \
+    PYTHONPATH=dags python -m pipelines.example.flow
 ```
 
 Deploy to a Prefect server or Cloud from the `dags/` directory:
 
 ```bash
 cd dags
-prefect deploy pipelines/example/flow.py:flow --name example-prod --work-pool default
+prefect deploy pipelines/example/flow.py:flow \
+    --name example-prod --work-pool default
 ```
 
 ## Database Environments
