@@ -261,7 +261,7 @@ CREATE TABLE IF NOT EXISTS wid.data_quality (
     , update_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
 
     -- Constraints.
-    , CHECK (quality_score BETWEEN 1 AND 5)
+    , CHECK (quality_score BETWEEN 0 AND 5)
 );
 
 -- Indexes for data_quality table.
@@ -283,7 +283,7 @@ COMMENT ON COLUMN wid.data_quality.country_code IS
 COMMENT ON COLUMN wid.data_quality.variable_code IS
 'References wid.variable(variable_code).';
 COMMENT ON COLUMN wid.data_quality.quality_score IS
-'WID data quality score from 1 (lowest) to 5 (highest). '
+'WID data quality score from 0 (unscored) to 5 (highest). '
 'Higher scores indicate more reliable underlying data sources.';
 COMMENT ON COLUMN wid.data_quality.imputation IS
 'Imputation method used by WID (e.g. full, tax and survey, '

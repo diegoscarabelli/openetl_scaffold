@@ -14,9 +14,9 @@ from airflow.providers.standard.operators.python import (
 
 from lib.airflow_utils import AirflowETLConfig, create_dag
 
-from .constants import WIDFileTypes
-from .extract import extract
-from .process import WIDProcessor
+from pipelines.wid.constants import WIDFileTypes
+from pipelines.wid.extract import extract
+from pipelines.wid.process import WIDProcessor
 
 config = AirflowETLConfig(
     pipeline_id="wid",
@@ -42,6 +42,7 @@ with dag:
     task_extract = PythonOperator(
         task_id="extract",
         python_callable=extract,
+        do_xcom_push=False,
         execution_timeout=timedelta(hours=2),
         op_kwargs={
             "ingest_dir": config.data_dirs.ingest,

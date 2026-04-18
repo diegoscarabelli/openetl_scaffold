@@ -15,12 +15,12 @@ Contents:
 
 OpenETL Scaffold is a starter template for building Python ETL data pipelines with [PostgreSQL](https://www.postgresql.org/) as the analytics database. It provides orchestrator-agnostic shared utilities and thin adapters for both [Apache Airflow](https://airflow.apache.org/) and [Prefect](https://www.prefect.io/), so the same pipeline logic runs under either orchestrator with minimal wiring.
 
-Unlike [OpenETL](https://github.com/diegoscarabelli/openetl), which is tightly integrated with a specific data stack (TimescaleDB, Airflow-only orchestration, credential-file auth, IAM with per-pipeline users), this scaffold is intentionally lightweight. The only infrastructure requirement is a PostgreSQL database. Clone, rename, and build on top of it.
+OpenETL Scaffold is extracted from [OpenETL](https://github.com/diegoscarabelli/openetl), stripped down to the core ETL framework. The only infrastructure requirement is a PostgreSQL database. Clone, rename, and build on top of it.
 
 Key characteristics:
 
 - **Orchestrator-agnostic core**: The shared library (`dags/lib/`) implements the four-step ETL pattern (ingest, batch, process, store) without importing any orchestrator. Airflow and Prefect adapters are thin wrappers.
-- **Single PostgreSQL dependency**: No TimescaleDB, PostGIS, or vectorscale extensions required (though you can add them). Database connection is configured via environment variables.
+- **PostgreSQL analytics database**: Production and development databases on the same instance, with environment-variable configuration to switch between them.
 - **Dual orchestrator support**: Each pipeline includes both a `dag.py` (Airflow 3) and a `flow.py` (Prefect 3) entry point, sharing all processing logic.
 - **Example pipeline included**: A working WID.world (World Inequality Database) pipeline demonstrates the full pattern with API extraction, incremental loading, dimension seeding, and fact table upserts.
 
@@ -77,17 +77,29 @@ Edit `iam.sql` first to replace the two `<REDACTED>` password placeholders with 
 # Step 1: Create the databases (production + development).
 psql -U postgres -d postgres -f database.ddl
 
-# Step 2: Initialize schemas and extensions (run against each database you use).
-psql -U postgres -d <your_db> -f schemas.ddl
+# Steps 2-4 must be run against EACH database you use (e.g., lens and lens_dev).
+# Schemas, IAM, and tables are per-database objects. Forgetting one database
+# causes runtime errors when pipelines target it.
+
+# Step 2: Initialize schemas and extensions.
+psql -U postgres -d lens -f schemas.ddl
+psql -U postgres -d lens_dev -f schemas.ddl
 
 # Step 3: Create roles, users, and permissions.
-psql -U postgres -d <your_db> -f iam.sql
+# Roles and users are cluster-wide, so iam.sql only needs to run once
+# against any database. The GRANT statements are database-scoped, so
+# run against each database where pipelines need access.
+psql -U postgres -d lens -f iam.sql
+psql -U postgres -d lens_dev -f iam.sql
 
 # Step 4: Create pipeline tables.
-psql -U postgres -d <your_db> -f dags/pipelines/wid/tables.ddl
+psql -U postgres -d lens -f dags/pipelines/wid/tables.ddl
+psql -U postgres -d lens_dev -f dags/pipelines/wid/tables.ddl
 ```
 
 > **Note:** If TimescaleDB is not installed, comment out the `CREATE EXTENSION` and matching `COMMENT ON EXTENSION` statements in `schemas.ddl` before running Step 2.
+>
+> **Note:** `iam.sql` uses `CREATE ROLE` and `CREATE USER`, which fail if the role/user already exists. When running against the second database, the role/user creation statements will error (roles are cluster-wide), but the `GRANT` statements will still succeed. This is safe to ignore.
 >
 > **Tip:** If your PostgreSQL `pg_hba.conf` requires password authentication, connect using `psql -h localhost` to trigger password prompts.
 
@@ -316,6 +328,53 @@ if __name__ == "__main__":
 #### Via Astro CLI
 
 `astro dev init` inside this repo creates `.astro/`, `Dockerfile`, etc. Astro's default DAGs folder is `dags/`, which matches this layout with no overrides needed. Delete the placeholder `dags/exampledag.py` that `astro dev init` drops in, since real DAGs are under `dags/pipelines/<name>/dag.py`.
+
+##### Configuration
+
+After running `astro dev init`, configure two files:
+
+1. **`.astro/config.yaml`**: Set custom ports for the Astro metadata database and webserver to avoid conflicts with your analytics database (port 5432) or other Astro projects running concurrently.
+
+2. **`docker-compose.override.yml`**: Pass database connection variables (`SQL_DB_*`) and mount the data directory into the scheduler container. The override file sets `DATA_DIR` to `/usr/local/airflow/data` (the container-side mount point) and maps your host-side `DATA_DIR` to that path. Use `host.docker.internal` (Mac/Windows) or `172.17.0.1` (Linux) for `SQL_DB_HOST` to reach the host database from inside the container.
+
+Both files are committed to the repository with working defaults.
+
+> **IMPORTANT:** Astronomer's docker-compose does **not** load your `.env` file for `${VAR:-default}` substitution in `docker-compose.override.yml`. Variables like `${SQL_DB_NAME:-lens}` will resolve to the fallback value (`lens`), not your `.env` value. To use `.env` values, export them to your shell before starting:
+>
+> ```bash
+> export $(grep -v "^#" .env | grep -v "^$" | xargs)
+> astro dev start
+> ```
+>
+> Alternatively, set explicit values directly in `docker-compose.override.yml` instead of relying on substitution.
+
+##### Start and Manage
+
+```bash
+# Start Astronomer (first time or after Dockerfile/requirements changes).
+astro dev start
+
+# Restart (picks up Python code changes without rebuilding the image).
+astro dev restart
+
+# Stop all containers.
+astro dev stop
+```
+
+##### Trigger and Monitor DAGs
+
+```bash
+# Trigger a DAG run.
+astro dev run dags trigger <dag_id>
+
+# Check task states for a specific run.
+astro dev run tasks states-for-dag-run <dag_id> "<run_id>"
+
+# Unpause a DAG (required before first trigger).
+astro dev run dags unpause <dag_id>
+```
+
+> **Note:** If a DAG run is in `running` state when Astronomer restarts, it becomes orphaned and may block new runs due to `max_active_runs`. Mark it as failed via the Airflow UI or API to unblock scheduling.
 
 #### Why `dags/`?
 
