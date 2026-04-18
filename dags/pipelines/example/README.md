@@ -175,61 +175,17 @@ The pipeline uses a single upsert method ([`upsert_model_instances`](../../lib/s
 
 The store task uses the standard [`store()`](../../lib/task_utils.py) function from the [Standard Pipeline](../../../README.md#standard-pipeline) pattern. Successfully processed files are moved to `store/` and failed files to `quarantine/`.
 
-## Airflow DAG
+### Airflow DAG
 
 [Code](dag.py)
 
-The DAG uses [`AirflowETLConfig`](../../lib/airflow_utils.py) with [`WIDFileTypes`](constants.py) for file type coordination and a task execution timeout of 2 hours. The standard four-task DAG is assembled via [`create_dag(config)`](../../lib/airflow_utils.py), then an extract task is prepended using a `PythonOperator`:
+The DAG uses [`AirflowETLConfig`](../../lib/airflow_utils.py) with [`WIDFileTypes`](constants.py) for file type coordination and a task execution timeout of 2 hours. The standard four-task DAG is assembled via [`create_dag(config)`](../../lib/airflow_utils.py), then an extract task is prepended using a `PythonOperator`. Trigger the `example` DAG manually from the Airflow UI.
 
-```python
-config = AirflowETLConfig(
-    pipeline_id="example",
-    pipeline_print_name="Example Pipeline",
-    description="...",
-    file_types=WIDFileTypes,
-    processor_class=WIDProcessor,
-    dag_schedule_interval=None,
-    process_format=r".*\.json$",
-    db_schema="wid",
-    task_execution_timeout=timedelta(hours=2),
-)
-
-dag = create_dag(config)
-
-with dag:
-    task_extract = PythonOperator(
-        task_id="extract",
-        python_callable=extract,
-        do_xcom_push=False,
-        execution_timeout=timedelta(hours=2),
-        op_kwargs={
-            "ingest_dir": config.data_dirs.ingest,
-            "db_schema": "wid",
-        },
-    )
-    task_extract >> dag.get_task("ingest")
-```
-
-Trigger the `example` DAG manually from the Airflow UI.
-
-## Prefect Flow
+### Prefect Flow
 
 [Code](flow.py)
 
-The flow uses [`PrefectETLConfig`](../../lib/prefect_utils.py) with the same pipeline parameters as the Airflow DAG. It is built inside a `_build_flow()` factory function to defer Prefect imports until runtime. Each ETL step is wrapped as a Prefect `@task` with `cache_policy=NONE` (no result caching between runs).
-
-```python
-config = PrefectETLConfig(
-    pipeline_id="example",
-    pipeline_print_name="Example Pipeline",
-    description="...",
-    file_types=WIDFileTypes,
-    processor_class=WIDProcessor,
-    process_format=r".*\.json$",
-    db_schema="wid",
-    tags=["example", "wid", "inequality"],
-)
-```
+The flow uses [`PrefectETLConfig`](../../lib/prefect_utils.py) with the same pipeline parameters as the Airflow DAG. Each ETL step is wrapped as a Prefect `@task` with `cache_policy=NONE` (no result caching between runs).
 
 **Differences from the Airflow DAG:**
 
@@ -243,7 +199,7 @@ config = PrefectETLConfig(
 PYTHONPATH=dags python -m pipelines.example.flow
 ```
 
-**Deploying to Prefect server or Cloud:**
+**Deploying to a Prefect server:**
 
 ```bash
 cd dags

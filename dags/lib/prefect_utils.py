@@ -13,8 +13,8 @@ Import PrefectETLConfig and create_flow() in your pipeline's flow.py.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Callable, List, Optional
+from dataclasses import dataclass
+from typing import Callable, Optional
 
 from prefect import flow, task
 from prefect.cache_policies import NONE
@@ -55,9 +55,6 @@ class PrefectETLConfig(ETLConfig):
 
     # Task execution timeout in seconds. None means no timeout.
     task_timeout_seconds: Optional[int] = None
-
-    # Tags for organizing and filtering flows in the Prefect UI.
-    tags: List[str] = field(default_factory=list)
 
     def __str__(self) -> str:
         """
