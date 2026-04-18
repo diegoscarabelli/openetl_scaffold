@@ -93,8 +93,8 @@ psql -U postgres -d lens -f iam.sql
 psql -U postgres -d lens_dev -f iam.sql
 
 # Step 4: Create pipeline tables.
-psql -U postgres -d lens -f dags/pipelines/wid/tables.ddl
-psql -U postgres -d lens_dev -f dags/pipelines/wid/tables.ddl
+psql -U postgres -d lens -f dags/pipelines/example/tables.ddl
+psql -U postgres -d lens_dev -f dags/pipelines/example/tables.ddl
 ```
 
 > **Note:** If TimescaleDB is not installed, comment out the `CREATE EXTENSION` and matching `COMMENT ON EXTENSION` statements in `schemas.ddl` before running Step 2.
@@ -175,10 +175,10 @@ Contains a subdirectory for each pipeline. Each subdirectory includes:
 - `dag.py` — Airflow 3 entry point.
 - `flow.py` — Prefect 3 entry point.
 
-The included `wid/` pipeline (World Inequality Database) is a working example. Copy and rename it to create new pipelines:
+The included `example/` pipeline (World Inequality Database) is a working example. Copy and rename it to create new pipelines:
 
 ```bash
-cp -r dags/pipelines/wid dags/pipelines/my_pipeline
+cp -r dags/pipelines/example dags/pipelines/my_pipeline
 ```
 
 ### [database.ddl](database.ddl)
@@ -333,7 +333,7 @@ if __name__ == "__main__":
 
 After running `astro dev init`, configure two files:
 
-1. **`.astro/config.yaml`**: Set custom ports for the Astro metadata database and webserver to avoid conflicts with your analytics database (port 5432) or other Astro projects running concurrently.
+1. **`.astro/config.yaml`**: Astro's internal metadata database defaults to port 5432, which conflicts with the analytics database. Change it to a different port (e.g., 5434). The webserver port (default 8080) may also conflict with other services. Both are set in the committed `config.yaml`.
 
 2. **`docker-compose.override.yml`**: Pass database connection variables (`SQL_DB_*`) and mount the data directory into the scheduler container. The override file sets `DATA_DIR` to `/usr/local/airflow/data` (the container-side mount point) and maps your host-side `DATA_DIR` to that path. Use `host.docker.internal` (Mac/Windows) or `172.17.0.1` (Linux) for `SQL_DB_HOST` to reach the host database from inside the container.
 
@@ -387,14 +387,14 @@ Prefect does not care about the directory name. Putting flows under `dags/` keep
 Run a flow locally:
 
 ```bash
-PYTHONPATH=dags python -m pipelines.wid.flow
+PYTHONPATH=dags python -m pipelines.example.flow
 ```
 
 Deploy to a Prefect server or Cloud from the `dags/` directory:
 
 ```bash
 cd dags
-prefect deploy pipelines/wid/flow.py:flow --name wid-prod --work-pool default
+prefect deploy pipelines/example/flow.py:flow --name example-prod --work-pool default
 ```
 
 ## Database Environments

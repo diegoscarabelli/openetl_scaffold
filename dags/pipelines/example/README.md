@@ -1,4 +1,4 @@
-# WID Pipeline
+# Example Pipeline (World Inequality Database)
 
 Extracts, processes, and stores income and wealth distribution data from the
 [World Inequality Database (WID.world)](https://wid.world/).
@@ -56,9 +56,9 @@ is re-extracted (inclusive, since WID may revise recent estimates).
 
 The pipeline is not scheduled. Trigger manually via Airflow UI or Prefect CLI.
 
-Airflow: trigger the `wid` DAG from the Airflow UI.
+Airflow: trigger the `example` DAG from the Airflow UI.
 
 Prefect:
 ```bash
-PYTHONPATH=dags python -m pipelines.wid.flow
+PYTHONPATH=dags python -m pipelines.example.flow
 ```

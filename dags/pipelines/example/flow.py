@@ -1,5 +1,5 @@
 """
-Prefect flow entry point for the WID pipeline.
+Prefect flow entry point for the example pipeline (WID).
 
 Adds an extract task before the standard ingest/batch/process/store
 sequence. The extract task fetches data from the WID.world API and
@@ -7,12 +7,12 @@ saves JSON files to the ingest directory.
 
 Run locally (from the repo root; dags/ must be on PYTHONPATH):
 
-    PYTHONPATH=dags python -m pipelines.wid.flow
+    PYTHONPATH=dags python -m pipelines.example.flow
 
 Deploy to Prefect server or Cloud:
 
-    cd dags && prefect deploy pipelines/wid/flow.py:flow \\
-        --name wid-prod --work-pool default
+    cd dags && prefect deploy pipelines/example/flow.py:flow \\
+        --name example-prod --work-pool default
 """
 
 from __future__ import annotations
@@ -42,8 +42,8 @@ def _build_flow() -> Callable:
     from lib.prefect_utils import PrefectETLConfig
 
     config = PrefectETLConfig(
-        pipeline_id="wid",
-        pipeline_print_name="WID Pipeline",
+        pipeline_id="example",
+        pipeline_print_name="Example Pipeline",
         description=(
             "Extract, process, and store income and "
             "wealth distribution data from the World "
@@ -53,12 +53,12 @@ def _build_flow() -> Callable:
         processor_class=WIDProcessor,
         process_format=r".*\.json$",
         db_schema="wid",
-        tags=["wid", "inequality"],
+        tags=["example", "wid", "inequality"],
     )
 
     @task(
         cache_policy=NONE,
-        name="wid.extract",
+        name="example.extract",
         timeout_seconds=7200,
     )
     def _extract() -> int:
@@ -70,7 +70,7 @@ def _build_flow() -> Callable:
 
     @task(
         cache_policy=NONE,
-        name="wid.ingest",
+        name="example.ingest",
     )
     def _ingest() -> int:
         try:
@@ -80,14 +80,14 @@ def _build_flow() -> Callable:
 
     @task(
         cache_policy=NONE,
-        name="wid.batch",
+        name="example.batch",
     )
     def _batch() -> list:
         return batch(config)
 
     @task(
         cache_policy=NONE,
-        name="wid.process",
+        name="example.process",
     )
     def _process(
         serialized_file_sets: list,
@@ -96,19 +96,19 @@ def _build_flow() -> Callable:
 
     @task(
         cache_policy=NONE,
-        name="wid.store",
+        name="example.store",
     )
     def _store(all_results: list) -> dict:
         return store(all_results, config)
 
     @flow(
-        name="wid",
+        name="example",
         description=config.description,
         tags=config.tags,
     )
-    def wid_flow() -> None:
+    def example_flow() -> None:
         """
-        WID pipeline flow: extract, ingest, batch, process, store.
+        Example pipeline flow: extract, ingest, batch, process, store.
         """
 
         _extract()
@@ -123,7 +123,7 @@ def _build_flow() -> Callable:
         all_results: List = [f.result(raise_on_failure=False) for f in futures]
         _store(all_results)
 
-    return wid_flow
+    return example_flow
 
 
 flow = _build_flow()
