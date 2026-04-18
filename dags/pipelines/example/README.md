@@ -185,7 +185,7 @@ The DAG uses [`AirflowETLConfig`](../../lib/airflow_utils.py) with [`WIDFileType
 
 [Code](flow.py)
 
-The flow uses [`PrefectETLConfig`](../../lib/prefect_utils.py) with the same pipeline parameters as the Airflow DAG. Each ETL step is wrapped as a Prefect `@task` with `cache_policy=NONE` (no result caching between runs).
+The flow uses [`PrefectETLConfig`](../../lib/prefect_utils.py) with the same pipeline parameters as the Airflow DAG. The standard flow is assembled via [`create_standard_flow(config)`](../../lib/prefect_utils.py), which wraps each ETL step as a Prefect `@task` with `cache_policy=NONE` (no result caching between runs). The extract callable and its keyword arguments are passed as parameters to prepend the extract task before ingest.
 
 **Differences from the Airflow DAG:**
 

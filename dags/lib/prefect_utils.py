@@ -4,10 +4,10 @@ Prefect flow factory and PrefectETLConfig.
 This module provides Prefect-specific configuration and flow assembly for the
 ETL pipeline workflow. It includes:
     - PrefectETLConfig dataclass extending ETLConfig with flow/task parameters.
-    - create_flow() factory for assembling complete flows from configuration.
+    - create_standard_flow() factory for assembling complete standard flows.
     - Integration with task_utils for orchestrator-agnostic task logic.
 
-Import PrefectETLConfig and create_flow() in your pipeline's flow.py.
+Import PrefectETLConfig and create_standard_flow() in your pipeline's flow.py.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class PrefectETLConfig(ETLConfig):
     Configuration parameters for Prefect flows and tasks.
 
     Mirrors the structure of AirflowETLConfig but with Prefect-native parameters
-    (retries as int seconds, cache policies, tags).
+    (retries as int seconds, cache policies, timeouts).
     """
 
     # Number of times to retry the flow on failure.
@@ -74,16 +74,44 @@ class PrefectETLConfig(ETLConfig):
 # -----------------------------------------------------------------------
 
 
-def create_flow(config: PrefectETLConfig) -> Callable:
+def create_standard_flow(
+    config: PrefectETLConfig,
+    extract_callable: Optional[Callable] = None,
+    extract_kwargs: Optional[dict] = None,
+) -> Callable:
     """
-    Build the standard four-task Prefect flow from a PrefectETLConfig.
+    Build the standard Prefect flow from a PrefectETLConfig.
 
-    Uses the task callables defined in task_utils. The flow returns early when no files
-    are found (ingest returns 0), logging a message instead of failing.
+    Assembles the standard pipeline sequence (extract, ingest, batch,
+    process, store) with each step wrapped as a Prefect task. The
+    extract step is optional: when extract_callable is None, the flow
+    starts at ingest. The flow returns early when no files are found
+    (ingest returns 0), logging a message instead of failing.
+
+    For flows that need a different task sequence or non-standard
+    composition, assemble the flow manually using the task callables
+    from task_utils and the Prefect @task/@flow decorators directly.
 
     :param config: Prefect-specific pipeline configuration.
+    :param extract_callable: Optional callable to run before ingest.
+        Wrapped as a Prefect task using the config's retry and timeout
+        settings. Called with extract_kwargs if provided.
+    :param extract_kwargs: Optional keyword arguments passed to the
+        extract callable.
     :return: A Prefect flow callable.
     """
+
+    if extract_callable is not None:
+
+        @task(
+            cache_policy=NONE,
+            name=f"{config.pipeline_id}.extract",
+            retries=config.task_retries,
+            retry_delay_seconds=config.task_retry_delay_seconds,
+            timeout_seconds=config.task_timeout_seconds,
+        )
+        def _extract() -> None:
+            extract_callable(**(extract_kwargs or {}))
 
     @task(
         cache_policy=NONE,
@@ -139,6 +167,8 @@ def create_flow(config: PrefectETLConfig) -> Callable:
         timeout_seconds=config.flow_timeout_seconds,
     )
     def pipeline_flow() -> None:
+        if extract_callable is not None:
+            _extract()
         count = _ingest()
         if not count:
             logger.info("No files to process. Exiting flow.")

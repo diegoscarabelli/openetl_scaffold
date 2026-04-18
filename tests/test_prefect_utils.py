@@ -3,11 +3,11 @@ Unit tests for lib.prefect_utils module.
 
 This test suite covers:
     - PrefectETLConfig dataclass initialization and defaults.
-    - create_flow() flow assembly.
+    - create_standard_flow() flow assembly.
     - Flow early exit when ingest returns 0.
 """
 
-from lib.prefect_utils import PrefectETLConfig, create_flow
+from lib.prefect_utils import PrefectETLConfig, create_standard_flow
 
 # -----------------------------------------------------------------------
 # TestPrefectETLConfig
@@ -32,7 +32,6 @@ class TestPrefectETLConfig:
         assert config.task_retries == 0
         assert config.task_retry_delay_seconds == 0
         assert config.task_timeout_seconds is None
-        assert config.tags == []
 
     def test_explicit_values(self, tmp_path, monkeypatch) -> None:
         """
@@ -48,12 +47,10 @@ class TestPrefectETLConfig:
             task_retries=2,
             task_retry_delay_seconds=30,
             task_timeout_seconds=600,
-            tags=["etl", "test"],
         )
         assert config.flow_retries == 3
         assert config.flow_timeout_seconds == 3600
         assert config.task_retries == 2
-        assert config.tags == ["etl", "test"]
 
     def test_inherits_etl_config(self, tmp_path, monkeypatch) -> None:
         """
@@ -84,34 +81,65 @@ class TestPrefectETLConfig:
 
 
 # -----------------------------------------------------------------------
-# TestCreateFlow
+# TestCreateStandardFlow
 # -----------------------------------------------------------------------
 
 
-class TestCreateFlow:
+class TestCreateStandardFlow:
     """
-    Tests for create_flow() flow factory.
+    Tests for create_standard_flow() flow factory.
     """
 
-    def test_create_flow_returns_callable(self, tmp_path, monkeypatch) -> None:
+    def test_create_standard_flow_returns_callable(self, tmp_path, monkeypatch) -> None:
         """
-        Test that create_flow returns a callable flow.
+        Test that create_standard_flow returns a callable flow.
         """
 
         monkeypatch.setenv("DATA_DIR", str(tmp_path))
         config = PrefectETLConfig(pipeline_id="flow_test")
-        flow_fn = create_flow(config)
+        flow_fn = create_standard_flow(config)
         assert callable(flow_fn)
 
-    def test_create_flow_name(self, tmp_path, monkeypatch) -> None:
+    def test_create_standard_flow_name(self, tmp_path, monkeypatch) -> None:
         """
         Test that the flow has the correct name.
         """
 
         monkeypatch.setenv("DATA_DIR", str(tmp_path))
         config = PrefectETLConfig(pipeline_id="named_flow")
-        flow_fn = create_flow(config)
+        flow_fn = create_standard_flow(config)
         assert flow_fn.name == "named_flow"
+
+    def test_create_standard_flow_with_extract(self, tmp_path, monkeypatch) -> None:
+        """
+        Test that create_standard_flow accepts an extract callable.
+        """
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+
+        def mock_extract(ingest_dir, db_schema):
+            pass
+
+        config = PrefectETLConfig(pipeline_id="extract_test")
+        flow_fn = create_standard_flow(
+            config,
+            extract_callable=mock_extract,
+            extract_kwargs={
+                "ingest_dir": str(tmp_path),
+                "db_schema": "test",
+            },
+        )
+        assert callable(flow_fn)
+
+    def test_create_standard_flow_without_extract(self, tmp_path, monkeypatch) -> None:
+        """
+        Test that create_standard_flow works without extract callable.
+        """
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        config = PrefectETLConfig(pipeline_id="no_extract")
+        flow_fn = create_standard_flow(config)
+        assert callable(flow_fn)
 
     def test_flow_early_exit_no_files(self, tmp_path, monkeypatch) -> None:
         """
@@ -127,7 +155,7 @@ class TestCreateFlow:
             pipeline_id="early_exit",
             ingest_callable=no_files_ingest,
         )
-        flow_fn = create_flow(config)
+        flow_fn = create_standard_flow(config)
         # Flow should complete without error when ingest
         # raises RuntimeError (returns 0, exits early).
         flow_fn()

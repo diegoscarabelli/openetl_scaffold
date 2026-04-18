@@ -156,7 +156,7 @@ Shared utilities that are orchestrator-agnostic, plus thin adapter modules for A
 
 - **[`airflow_utils.py`](dags/lib/airflow_utils.py)**: Thin Airflow adapter. `AirflowETLConfig` extends `ETLConfig` with DAG-specific parameters (schedule, timeouts, retries, callbacks). `create_dag()` factory assembles the standard four-task DAG with dynamic task mapping for parallel processing.
 
-- **[`prefect_utils.py`](dags/lib/prefect_utils.py)**: Thin Prefect adapter. `PrefectETLConfig` extends `ETLConfig` with flow-specific parameters (retries, timeouts, tags). `create_flow()` factory assembles the standard four-task flow with `.map()` for parallel processing.
+- **[`prefect_utils.py`](dags/lib/prefect_utils.py)**: Thin Prefect adapter. `PrefectETLConfig` extends `ETLConfig` with flow-specific parameters (retries, timeouts). `create_standard_flow()` factory assembles the standard pipeline flow with `.map()` for parallel processing and optional extract callable.
 
 - **[`logging_utils.py`](dags/lib/logging_utils.py)**: Logging utilities that work in both orchestrator and standalone contexts.
 
