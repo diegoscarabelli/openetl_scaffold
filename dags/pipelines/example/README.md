@@ -1,4 +1,4 @@
-# WID Pipeline
+# Example Pipeline (World Inequality Database)
 
 Extracts, processes, and stores income and wealth distribution data from the
 [World Inequality Database (WID.world)](https://wid.world/).

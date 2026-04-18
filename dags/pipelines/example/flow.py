@@ -1,5 +1,5 @@
 """
-Prefect flow entry point for the WID pipeline.
+Prefect flow entry point for the example pipeline (WID).
 
 Adds an extract task before the standard ingest/batch/process/store
 sequence. The extract task fetches data from the WID.world API and

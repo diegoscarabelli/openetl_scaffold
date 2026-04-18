@@ -1,5 +1,5 @@
 """
-Airflow 3 DAG entry point for the WID pipeline.
+Airflow 3 DAG entry point for the example pipeline (WID).
 
 Adds an extract task before the standard ingest/batch/process/store sequence. The
 extract task fetches data from the WID.world API and saves JSON files to the ingest
