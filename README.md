@@ -19,7 +19,7 @@ OpenETL Scaffold is extracted from [OpenETL](https://github.com/diegoscarabelli/
 
 Key characteristics:
 
-- **Orchestrator-agnostic core**: The shared library (`dags/lib/`) implements the four-step ETL pattern (ingest, batch, process, store) without importing any orchestrator. Airflow and Prefect adapters are thin wrappers.
+- **Orchestrator-agnostic core**: The shared library (`dags/lib/`) implements the standard four-step ETL pattern (ingest, batch, process, store) without importing any orchestrator. Airflow and Prefect adapters are thin wrappers.
 - **PostgreSQL analytics database**: Production and development databases on the same instance, with environment-variable configuration to switch between them.
 - **Dual orchestrator support**: Each pipeline includes both a `dag.py` (Airflow 3) and a `flow.py` (Prefect 3) entry point, sharing all processing logic.
 - **Example pipeline included**: A working WID.world (World Inequality Database) pipeline demonstrates the full pattern with API extraction, incremental loading, dimension seeding, and fact table upserts.
@@ -30,22 +30,11 @@ Key characteristics:
 
 - **PostgreSQL 14+** installed and running. Version 14 is the minimum because the IAM script uses `pg_read_all_data` and `pg_write_all_data` predefined roles.
 - **Python 3.10+** with pip.
-- **One orchestrator** (optional for local testing):
+- **One orchestrator** (optional for local testing), such as:
   - [Prefect 3](https://docs.prefect.io/v3/get-started/install): `pip install 'prefect>=3.0'`
-  - [Airflow 3 via Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli): requires [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+  - [Airflow 3 via Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli): requires [Docker Desktop](https://www.docker.com/products/docker-desktop/) (macOS/Windows) or [Docker Engine](https://docs.docker.com/engine/install/) (Linux). The scaffold ships [`.astro/config.yaml`](.astro/config.yaml) with Astro's metadata database on port 5434 and webserver on 8081 to avoid collisions with a local PostgreSQL on 5432.
 
-### Setup Checklist
-
-Quick reference for the full setup. Detailed instructions for each step follow below.
-
-1. [Clone and detach](#clone-and-detach): `git clone ... && git remote remove origin`
-2. [Set up credentials](#set-up-credentials): `cp .env.template .env`, fill in passwords
-3. [Initialize the database](#initialize-the-database): edit `iam.sql` passwords, then run DDL files per database (`database.ddl` → `schemas.ddl` → `iam.sql` → `tables.ddl`)
-4. [Python environment](#python-environment): `make venv && source .venv/bin/activate`
-5. Orchestrator: uncomment your choice in [`requirements.txt`](requirements.txt), re-run `make venv`
-6. [Run pipelines](#running-pipelines): [Airflow via Astro](#airflow-3) or [Prefect](#prefect)
-
-> **Astro port conflicts:** The scaffold ships [`.astro/config.yaml`](.astro/config.yaml) with Astro's metadata database on port 5434 and the webserver on 8081 to avoid collisions with a local PostgreSQL on 5432. Adjust these ports if they are already in use on your machine.
+Uncomment your chosen orchestrator in [`requirements.txt`](requirements.txt) before running `make venv` (see [Python Environment](#python-environment)).
 
 ### Clone and Detach
 
