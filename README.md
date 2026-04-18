@@ -21,8 +21,7 @@ Key characteristics:
 
 - **Orchestrator-agnostic core**: The shared library (`dags/lib/`) implements the standard four-step ETL pattern (ingest, batch, process, store) without importing any orchestrator. Airflow and Prefect adapters are thin wrappers.
 - **PostgreSQL analytics database**: Production and development databases on the same instance, with environment-variable configuration to switch between them.
-- **Dual orchestrator support**: Each pipeline includes both a `dag.py` (Airflow 3) and a `flow.py` (Prefect 3) entry point, sharing all processing logic.
-- **Example pipeline included**: A working WID.world (World Inequality Database) pipeline demonstrates the full pattern with API extraction, incremental loading, dimension seeding, and fact table upserts.
+- **Example pipeline included**: A working WID.world pipeline with both a `dag.py` (Airflow 3) and a `flow.py` (Prefect 3) entry point, demonstrating how to wire either orchestrator to the shared processing logic.
 
 ## Getting Started
 
