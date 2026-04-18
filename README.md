@@ -30,7 +30,22 @@ Key characteristics:
 
 - **PostgreSQL 14+** installed and running. Version 14 is the minimum because the IAM script uses `pg_read_all_data` and `pg_write_all_data` predefined roles.
 - **Python 3.10+** with pip.
-- **One orchestrator** (optional for local testing): `apache-airflow>=3.0` or `prefect>=3.0`.
+- **One orchestrator** (optional for local testing):
+  - [Prefect 3](https://docs.prefect.io/v3/get-started/install): `pip install 'prefect>=3.0'`
+  - [Airflow 3 via Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli): requires [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+
+### Setup Checklist
+
+Quick reference for the full setup. Detailed instructions for each step follow below.
+
+1. [Clone and detach](#clone-and-detach): `git clone ... && git remote remove origin`
+2. [Set up credentials](#set-up-credentials): `cp .env.template .env`, fill in passwords
+3. [Initialize the database](#initialize-the-database): edit `iam.sql` passwords, then run DDL files per database (`database.ddl` → `schemas.ddl` → `iam.sql` → `tables.ddl`)
+4. [Python environment](#python-environment): `make venv && source .venv/bin/activate`
+5. Orchestrator: uncomment your choice in [`requirements.txt`](requirements.txt), re-run `make venv`
+6. [Run pipelines](#running-pipelines): [Airflow via Astro](#airflow-3) or [Prefect](#prefect)
+
+> **Astro port conflicts:** The scaffold ships [`.astro/config.yaml`](.astro/config.yaml) with Astro's metadata database on port 5434 and the webserver on 8081 to avoid collisions with a local PostgreSQL on 5432. Adjust these ports if they are already in use on your machine.
 
 ### Clone and Detach
 
