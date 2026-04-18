@@ -36,7 +36,11 @@ This pipeline tracks two distribution metrics:
 
 ## Pipeline
 
-This pipeline includes both an [Airflow 3 DAG](dag.py) and a [Prefect 3 flow](flow.py) entry point to demonstrate how the same pipeline logic runs under either orchestrator. In practice, you would keep only the orchestrator you use and delete the other. Both implementations share the extraction, processing, and storage logic described in this section. The orchestrator-specific configuration and task wiring are covered in the [Airflow DAG](#airflow-dag) and [Prefect Flow](#prefect-flow) sections.
+This pipeline provides both an [Airflow 3 DAG](dag.py) and a [Prefect 3 flow](flow.py) to demonstrate how the same pipeline logic runs under either orchestrator. In practice, you would create only the one you use. Both implementations share the extraction, processing, and storage logic described below; they differ only in configuration and task wiring.
+
+The [Airflow DAG](dag.py) uses [`AirflowETLConfig`](../../lib/airflow_utils.py) with a task execution timeout of 2 hours. The standard four-task DAG is assembled via [`create_dag(config)`](../../lib/airflow_utils.py), then an extract task is prepended using a `PythonOperator`. Trigger the `example` DAG manually from the Airflow UI.
+
+The [Prefect flow](flow.py) uses [`PrefectETLConfig`](../../lib/prefect_utils.py) with the same pipeline parameters. The standard flow is assembled via [`create_standard_flow(config)`](../../lib/prefect_utils.py), with the extract callable and its keyword arguments passed as parameters. The Prefect implementation differs from the Airflow DAG in three ways: it uses `.map()` for parallel batch processing (versus dynamic task mapping), it catches `RuntimeError` from ingest to exit early without failing (versus raising), and it collects process results with `raise_on_failure=False` to ensure store runs even if individual batches failed. Run the flow locally with `PYTHONPATH=dags python -m pipelines.example.flow`, or deploy to a Prefect server with `prefect deploy pipelines/example/flow.py:flow`.
 
 - Pipeline ID: `example`
 - Schedule: `None` (manual trigger only).
@@ -174,34 +178,3 @@ The pipeline uses a single upsert method ([`upsert_model_instances`](../../lib/s
 ### Store task
 
 The store task uses the standard [`store()`](../../lib/task_utils.py) function from the [Standard Pipeline](../../../README.md#standard-pipeline) pattern. Successfully processed files are moved to `store/` and failed files to `quarantine/`.
-
-### Airflow DAG
-
-[Code](dag.py)
-
-The DAG uses [`AirflowETLConfig`](../../lib/airflow_utils.py) with [`WIDFileTypes`](constants.py) for file type coordination and a task execution timeout of 2 hours. The standard four-task DAG is assembled via [`create_dag(config)`](../../lib/airflow_utils.py), then an extract task is prepended using a `PythonOperator`. Trigger the `example` DAG manually from the Airflow UI.
-
-### Prefect Flow
-
-[Code](flow.py)
-
-The flow uses [`PrefectETLConfig`](../../lib/prefect_utils.py) with the same pipeline parameters as the Airflow DAG. The standard flow is assembled via [`create_standard_flow(config)`](../../lib/prefect_utils.py), which wraps each ETL step as a Prefect `@task` with `cache_policy=NONE` (no result caching between runs). The extract callable and its keyword arguments are passed as parameters to prepend the extract task before ingest.
-
-**Differences from the Airflow DAG:**
-
-- **Parallel processing**: The process task uses `.map(batches)` to distribute batches across concurrent Prefect task runs. In Airflow, this is handled by dynamic task mapping via `create_dag()`.
-- **Early exit on empty ingest**: The `_ingest` task catches `RuntimeError` (no files found) and returns 0, which causes the flow to exit early without error. In Airflow, the ingest task raises and the DAG run fails.
-- **Error collection**: The `_store` task collects process results using `f.result(raise_on_failure=False)` to ensure store runs even if individual batches failed.
-
-**Running locally:**
-
-```bash
-PYTHONPATH=dags python -m pipelines.example.flow
-```
-
-**Deploying to a Prefect server:**
-
-```bash
-cd dags
-prefect deploy pipelines/example/flow.py:flow --name example-prod --work-pool default
-```
