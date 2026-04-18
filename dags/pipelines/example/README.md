@@ -36,7 +36,7 @@ This pipeline tracks two distribution metrics:
 
 ## Pipeline
 
-This pipeline includes both an [Airflow 3 DAG](dag.py) and a [Prefect 3 flow](flow.py) entry point. Both implementations share the same extraction, processing, and storage logic described in this section. The orchestrator-specific configuration and task wiring are covered in the [Airflow DAG](#airflow-dag) and [Prefect Flow](#prefect-flow) sections.
+This pipeline includes both an [Airflow 3 DAG](dag.py) and a [Prefect 3 flow](flow.py) entry point to demonstrate how the same pipeline logic runs under either orchestrator. In practice, you would keep only the orchestrator you use and delete the other. Both implementations share the extraction, processing, and storage logic described in this section. The orchestrator-specific configuration and task wiring are covered in the [Airflow DAG](#airflow-dag) and [Prefect Flow](#prefect-flow) sections.
 
 - Pipeline ID: `example`
 - Schedule: `None` (manual trigger only).
