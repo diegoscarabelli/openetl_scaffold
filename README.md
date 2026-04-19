@@ -5,8 +5,8 @@ Contents:
 - [Introduction](#introduction)
 - [Getting Started](#getting-started)
 - [Running Pipelines](#running-pipelines)
-- [Standard Pipeline](#standard-pipeline)
 - [Database Environments](#database-environments)
+- [Standard Pipeline](#standard-pipeline)
 - [Data Directories](#data-directories)
 - [Repository Structure](#repository-structure)
 - [Contributing](#contributing)
@@ -31,7 +31,7 @@ Key characteristics:
 - **Python 3.10+** with pip.
 - **One orchestrator** (optional for local testing), such as:
   - [Prefect 3](https://docs.prefect.io/v3/get-started/install): `pip install 'prefect>=3.0'`
-  - [Airflow 3 via Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli): requires [Docker Desktop](https://www.docker.com/products/docker-desktop/) (macOS/Windows) or [Docker Engine](https://docs.docker.com/engine/install/) (Linux). The scaffold ships [`.astro/config.yaml`](.astro/config.yaml) with Astro's metadata database on port 5434 and webserver on 8081 to avoid collisions with a local PostgreSQL on 5432.
+  - [Airflow 3 via Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli): requires [Docker Desktop](https://www.docker.com/products/docker-desktop/) (macOS/Windows) or [Docker Engine](https://docs.docker.com/engine/install/) (Linux). See [Running Pipelines](#airflow-3-via-astro-cli) for configuration tips (port conflicts, database connection).
 
 Uncomment your chosen orchestrator in [`requirements.txt`](requirements.txt) before running `make venv` (see [Python Environment](#python-environment)).
 
@@ -159,6 +159,7 @@ After running `astro dev init`, configure two files:
           - SQL_DB_USER=${SQL_DB_USER}
           - SQL_DB_PASSWORD=${SQL_DB_PASSWORD}
           - DATA_DIR=/usr/local/airflow/data
+          - AIRFLOW__LOGGING__ENABLE_TASK_CONTEXT_LOGGER=False
         volumes:
           - ${DATA_DIR:-./data}:/usr/local/airflow/data
 
