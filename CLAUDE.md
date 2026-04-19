@@ -5,11 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## README.md
 
 The most important source of truth is the [`/README.md`](README.md) file. You MUST read and understand the `README.md` file in order to provide accurate and relevant responses and coding assistance.
+
 The `README.md` file includes:
-- **Layout**: Repository structure with `dags/lib/` shared utilities, `dags/pipelines/` pipeline implementations, and top-level DDL/SQL files.
-- **Quick Start**: Clone, credentials, database setup (database.ddl, schemas.ddl, iam.sql), Python dependencies, and creating a new pipeline.
-- **Airflow 3 / Prefect**: Orchestrator-specific instructions for running pipelines.
+- **Introduction**: Project overview, clone-and-detach workflow, and key characteristics.
+- **Getting Started**: Clone, credentials, database setup (database.ddl, schemas.ddl, iam.sql), Python environment, and test suite verification.
+- **Running Pipelines**: Configuration tips for Airflow (Astro CLI) and Prefect adapters.
+- **Standard Pipeline**: Five-step pipeline sequence, ETLConfig, and example DAG/flow entry points.
+- **Database Environments**: Production and development database setup and switching.
 - **Data Directories**: Four-directory file state machine (ingest, process, store, quarantine).
+- **Repository Structure**: Detailed reference for `dags/lib/`, `dags/pipelines/`, DDL files, and tests.
 
 ## CONTRIBUTING.md
 

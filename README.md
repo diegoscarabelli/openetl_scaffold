@@ -128,19 +128,46 @@ The test suite connects to a PostgreSQL instance on `localhost:5432` using the `
 
 ## Running Pipelines
 
+The scaffold ships with adapters for [Apache Airflow](https://airflow.apache.org/) and [Prefect](https://www.prefect.io/), but the core pipeline logic is orchestrator-agnostic and can work with other orchestrators too. The sections below cover configuration tips for each of the included adapters.
+
 ### Airflow 3 via Astro CLI
+
+Install the [Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli) and [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or [Docker Engine](https://docs.docker.com/engine/install/) on Linux).
 
 `astro dev init` inside this repo creates `.astro/`, `Dockerfile`, etc. Astro's default DAGs folder is `dags/`, which matches this layout with no overrides needed. Delete the placeholder `dags/exampledag.py` that `astro dev init` drops in, since real DAGs are under `dags/pipelines/<name>/dag.py`.
 
 After running `astro dev init`, configure two files:
 
-1. **`.astro/config.yaml`**: Astro's internal metadata database defaults to port 5432, which conflicts with the analytics database. Change it to a different port (e.g., 5434). The webserver port (default 8080) may also conflict with other services. Both are set in the committed `config.yaml`.
+1. **`.astro/config.yaml`**: Astro's internal metadata database defaults to port 5432, which conflicts with the analytics database. Change it to a different port (e.g., 5434). The webserver port (default 8080) may also conflict with other services:
 
-2. **`docker-compose.override.yml`**: Pass database connection variables (`SQL_DB_*`) and mount the data directory into the scheduler container. The override file sets `DATA_DIR` to `/usr/local/airflow/data` (the container-side mount point) and maps your host-side `DATA_DIR` to that path. Use `host.docker.internal` (Mac/Windows) or `172.17.0.1` (Linux) for `SQL_DB_HOST` to reach the host database from inside the container.
+    ```yaml
+    postgres:
+        port: "5434"
+    webserver:
+        port: "8081"
+    ```
 
-Both files are committed to the repository with working defaults.
+2. **`docker-compose.override.yml`**: Pass database connection variables (`SQL_DB_*`) and mount the data directory into the scheduler container. Use `host.docker.internal` (Mac/Windows) or `172.17.0.1` (Linux) for `SQL_DB_HOST` to reach the host database from inside the container:
 
-The override file uses `${VAR}` references that Docker Compose resolves from the `.env` file in the project root. If a variable is unset, it resolves to an empty string. Make sure your `.env` has all `SQL_DB_*` values filled in before running `astro dev start`.
+    ```yaml
+    services:
+      scheduler:
+        environment:
+          - SQL_DB_HOST=host.docker.internal
+          - SQL_DB_PORT=${SQL_DB_PORT}
+          - SQL_DB_NAME=${SQL_DB_NAME}
+          - SQL_DB_USER=${SQL_DB_USER}
+          - SQL_DB_PASSWORD=${SQL_DB_PASSWORD}
+          - DATA_DIR=/usr/local/airflow/data
+        volumes:
+          - ${DATA_DIR:-./data}:/usr/local/airflow/data
+
+      dag-processor:
+        environment:
+          - DATA_DIR=/usr/local/airflow/data
+    ```
+
+The `${VAR}` references are resolved from the `.env` file in the project root. If a variable is unset, it resolves to an empty string. Make sure your `.env` has all `SQL_DB_*` values filled in before running `astro dev start`.
 
 ### Prefect
 
@@ -169,6 +196,16 @@ cd dags
 prefect deploy pipelines/example/flow.py:flow \
     --name example-prod --work-pool default
 ```
+
+## Database Environments
+
+`database.ddl` creates two databases: one for production and one for development. Both share the same schemas, tables, and IAM configuration. Run `schemas.ddl`, `iam.sql`, and your pipeline DDL scripts against each database you use.
+
+To switch between them, change `SQL_DB_NAME` in your `.env` file (or set `DATABASE_URL`):
+
+- **Pipeline development** (running DAGs/flows locally): point `SQL_DB_NAME` at the development database.
+- **Production** (deployed orchestrator): point `SQL_DB_NAME` at the production database.
+- **Unit tests** (pytest): tests use the default `postgres` database with throwaway tables, configured via `TEST_DB_URL` in `conftest.py`. No pipeline schemas needed.
 
 ## Standard Pipeline
 
@@ -250,16 +287,6 @@ if __name__ == "__main__":
     flow()
 ```
 
-## Database Environments
-
-`database.ddl` creates two databases: one for production and one for development. Both share the same schemas, tables, and IAM configuration. Run `schemas.ddl`, `iam.sql`, and your pipeline DDL scripts against each database you use.
-
-To switch between them, change `SQL_DB_NAME` in your `.env` file (or set `DATABASE_URL`):
-
-- **Pipeline development** (running DAGs/flows locally): point `SQL_DB_NAME` at the development database.
-- **Production** (deployed orchestrator): point `SQL_DB_NAME` at the production database.
-- **Unit tests** (pytest): tests use the default `postgres` database with throwaway tables, configured via `TEST_DB_URL` in `conftest.py`. No pipeline schemas needed.
-
 ## Data Directories
 
 Each pipeline uses four directories under `data/{pipeline_id}/`:
@@ -271,7 +298,7 @@ Each pipeline uses four directories under `data/{pipeline_id}/`:
 | `store/`     | Archive for successfully processed files.            |
 | `quarantine/`| Isolation for files that caused errors.              |
 
-`data/` is gitignored. Set `DATA_DIR` in `.env` to use a different base path. For Astronomer/Docker setups, use an absolute host-side path (Docker Compose does not expand `~`).
+`data/` is gitignored. Set `DATA_DIR` in `.env` to use a different base path. Relative paths (e.g., `./data`) work and resolve from the project root. Docker Compose does not expand `~`, so use `./relative` or `/absolute` paths.
 
 ## Repository Structure
 
