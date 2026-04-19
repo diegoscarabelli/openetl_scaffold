@@ -10,8 +10,8 @@ The `README.md` file includes:
 - **Introduction**: Project overview, clone-and-detach workflow, and key characteristics.
 - **Getting Started**: Clone, credentials, database setup (database.ddl, schemas.ddl, iam.sql), Python environment, and test suite verification.
 - **Running Pipelines**: Configuration tips for Airflow (Astro CLI) and Prefect adapters.
-- **Standard Pipeline**: Five-step pipeline sequence, ETLConfig, and example DAG/flow entry points.
 - **Database Environments**: Production and development database setup and switching.
+- **Standard Pipeline**: Five-step pipeline sequence, ETLConfig, and example DAG/flow entry points.
 - **Data Directories**: Four-directory file state machine (ingest, process, store, quarantine).
 - **Repository Structure**: Detailed reference for `dags/lib/`, `dags/pipelines/`, DDL files, and tests.
 

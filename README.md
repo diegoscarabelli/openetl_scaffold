@@ -95,6 +95,7 @@ psql -U postgres -d lens_dev -f iam.sql
 psql -U postgres -d lens -f dags/pipelines/example/tables.ddl
 psql -U postgres -d lens_dev -f dags/pipelines/example/tables.ddl
 ```
+
 If your PostgreSQL `pg_hba.conf` requires password authentication, connect using `psql -h localhost` to trigger password prompts.
 
 > **Note:** The [TimescaleDB](https://docs.timescale.com/self-hosted/latest/install/) extension statements in `schemas.ddl` are commented out by default. If you have TimescaleDB installed, uncomment the `CREATE EXTENSION` statements before running Step 2.
@@ -223,8 +224,6 @@ The standard pipeline pattern is a five-step sequence. Extract and process are p
 ### Example: Airflow DAG
 
 ```python
-from datetime import timedelta
-
 from airflow.providers.standard.operators.python import PythonOperator
 
 from lib.airflow_utils import AirflowETLConfig, create_dag
@@ -341,7 +340,7 @@ Creates the production and development databases. Must be executed first, before
 
 ### [schemas.ddl](schemas.ddl)
 
-Creates PostgreSQL extensions and per-pipeline schemas. Add one `CREATE SCHEMA` block per pipeline. If TimescaleDB or other extensions are not needed, comment out the corresponding `CREATE EXTENSION` and `COMMENT ON EXTENSION` statements.
+Creates PostgreSQL extensions and per-pipeline schemas. Add one `CREATE SCHEMA` block per pipeline. The TimescaleDB extension is commented out by default; uncomment it if installed.
 
 ### [iam.sql](iam.sql)
 
