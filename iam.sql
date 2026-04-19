@@ -3,7 +3,7 @@
 LENS DATABASE IDENTITY AND ACCESS MANAGEMENT (IAM)
 ========================================================================================
 Description: This script creates roles, login users, and permissions for the `lens`
-             database. Must be executed after schemas.ddl.
+             database (or `lens_dev`). Must be executed after schemas.ddl.
 
 Prerequisites:
   - The `lens` database must already exist (created by database.ddl).
@@ -23,8 +23,9 @@ Design Notes:
   - A single generic `data_pipelines` user handles all pipeline writes.
     For stronger per-pipeline isolation, replace it with per-pipeline users
     and scope permissions per schema.
-  - Re-running this script will fail if roles or users already exist; drop
-    them first or skip this step.
+  - Re-running this script is safe: `CREATE ROLE`/`CREATE USER` statements
+    will error if the role already exists, but `psql` continues and the
+    remaining `GRANT`/`COMMENT` statements still apply.
 
 Connection:
   - Connect to the `lens` database to create users and grant permissions:

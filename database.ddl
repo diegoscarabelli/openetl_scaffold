@@ -11,14 +11,14 @@ Prerequisites:
   - Must have superuser privileges (typically the `postgres` user).
 
 Connection:
-  - Connect to the default `postgres` database to create the `lens` database:
+  - Connect to the default `postgres` database to create `lens`, `lens_dev` databases:
     psql -U postgres -d postgres -f database.ddl
   - Alternative with TCP/IP and password authentication:
     psql -h localhost -U postgres -d postgres -f database.ddl
 
 Notes:
   - Character encoding and collation are set for UTF-8 support.
-  - Replace `lens` below with your preferred database name.
+  - Replace `lens` and `lens_dev` below with your preferred database names.
 ========================================================================================
 */
 
@@ -37,7 +37,7 @@ CREATE DATABASE lens
     TEMPLATE template0;
 
 COMMENT ON DATABASE lens IS
-    'Data pipeline analytics database.';
+    'Analytics database curated by data pipelines.';
 
 ----------------------------------------------------------------------------------------
 -- DEVELOPMENT DATABASE
@@ -50,4 +50,4 @@ CREATE DATABASE lens_dev
     TEMPLATE template0;
 
 COMMENT ON DATABASE lens_dev IS
-    'Non-production database for development and testing.';
+    'Non-production database for development of data pipelines.';
