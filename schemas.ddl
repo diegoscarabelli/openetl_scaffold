@@ -3,7 +3,8 @@
 LENS DATABASE SCHEMA INITIALIZATION
 ========================================================================================
 Description: This script creates PostgreSQL extensions and per-pipeline schemas
-             for the `lens` database. Must be executed after database.ddl.
+             for the `lens` database (or `lens_dev`). 
+             Must be executed after database.ddl.
 
 Prerequisites:
   - The `lens` database must already exist (created by database.ddl).
@@ -30,9 +31,9 @@ Connection:
 -- EXTENSIONS
 ----------------------------------------------------------------------------------------
 
-CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
-COMMENT ON EXTENSION timescaledb IS
-    'Time-series database built on PostgreSQL.';
+-- CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
+-- COMMENT ON EXTENSION timescaledb IS
+--     'Time-series database built on PostgreSQL.';
 
 ----------------------------------------------------------------------------------------
 -- PIPELINE SCHEMAS
