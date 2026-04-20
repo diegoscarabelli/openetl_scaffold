@@ -1,6 +1,13 @@
 # Main requirements
 -r requirements.txt
 
+# Orchestrators (both installed for testing).
+apache-airflow>=3.0
+prefect>=3.0
+
+# Date/time utilities.
+pendulum>=3.0
+
 # Linting and formatting
 autoflake
 black>=26.3.1
