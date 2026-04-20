@@ -2,7 +2,7 @@
 -r requirements.txt
 
 # Orchestrators (both installed for testing).
-apache-airflow>=3.0,<4.0 ; python_version >= "3.10" and python_version < "3.13"
+apache-airflow>=3.0,<4.0
 prefect>=3.0,<4.0
 
 # Date/time utilities.
