@@ -197,8 +197,8 @@ class TestFetchJson:
 
         mock_resp = MagicMock()
         mock_resp.read.return_value = b'{"ok": true}'
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.__enter__.return_value = mock_resp
+        mock_resp.__exit__.return_value = False
         mock_urlopen.return_value = mock_resp
 
         result = _fetch_json("http://example.com/api")
@@ -217,8 +217,8 @@ class TestFetchJson:
 
         mock_resp = MagicMock()
         mock_resp.read.return_value = b"[]"
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.__enter__.return_value = mock_resp
+        mock_resp.__exit__.return_value = False
 
         mock_urlopen.side_effect = [
             URLError("timeout"),
@@ -284,8 +284,8 @@ class TestFetchLarge:
 
         mock_resp = MagicMock()
         mock_resp.read.return_value = b'[{"redirected": true}]'
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.__enter__.return_value = mock_resp
+        mock_resp.__exit__.return_value = False
         mock_urlopen.return_value = mock_resp
 
         result = _fetch_large("http://api.example.com")
@@ -499,8 +499,9 @@ class TestFetchVariableMetadata:
 
         # Should still return results using fallback values.
         assert len(result) == 2
-        assert result[0]["short_name"] == "Pre-tax national income share"
-        assert result[1]["short_name"] == "Net personal wealth share"
+        by_code = {r["variable_code"]: r for r in result}
+        assert by_code["sptinc"]["short_name"] == "Pre-tax national income share"
+        assert by_code["shweal"]["short_name"] == "Net personal wealth share"
 
     @patch("pipelines.example.extract._fetch_large")
     def test_metadata_structure(self, mock_fetch: MagicMock) -> None:
@@ -739,8 +740,8 @@ class TestGetMaxYear:
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchone.return_value = (2023,)
         mock_engine = MagicMock()
-        mock_engine.connect.return_value.__enter__ = lambda s: mock_conn
-        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+        mock_engine.connect.return_value.__enter__.return_value = mock_conn
+        mock_engine.connect.return_value.__exit__.return_value = False
         mock_get_engine.return_value = mock_engine
 
         result = _get_max_year("wid")
@@ -755,8 +756,8 @@ class TestGetMaxYear:
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchone.return_value = (None,)
         mock_engine = MagicMock()
-        mock_engine.connect.return_value.__enter__ = lambda s: mock_conn
-        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+        mock_engine.connect.return_value.__enter__.return_value = mock_conn
+        mock_engine.connect.return_value.__exit__.return_value = False
         mock_get_engine.return_value = mock_engine
 
         result = _get_max_year("wid")
