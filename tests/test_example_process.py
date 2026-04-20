@@ -112,12 +112,12 @@ class TestSeedPercentiles:
         processor._seed_percentiles(session)
 
         instances = mock_upsert.call_args[1]["model_instances"]
-        first = instances[0]
-        assert first.percentile_code == "p0p10"
-        assert first.lower_bound == 0
-        assert first.upper_bound == 10
-        assert first.width == 10
-        assert first.granularity == "decile"
+        by_code = {i.percentile_code: i for i in instances}
+        p0p10 = by_code["p0p10"]
+        assert p0p10.lower_bound == 0
+        assert p0p10.upper_bound == 10
+        assert p0p10.width == 10
+        assert p0p10.granularity == "decile"
 
 
 # -----------------------------------------------------------------------
