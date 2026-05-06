@@ -505,6 +505,129 @@ class TestUpsertModelInstances:
                 returning_columns=["id", "not_a_column"],
             )
 
+    def test_conflict_columns_unknown_name_raises(self, db_session) -> None:
+        """
+        Passing an unknown column name in ``conflict_columns`` should raise a
+        clear ``ValueError`` listing the offending entry, not an opaque
+        SQLAlchemy ``index_elements`` failure later. Validates the names-
+        namespace contract for ``conflict_columns``.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="not_a_column"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["not_a_column"],
+                on_conflict_update=True,
+            )
+
+    def test_update_columns_unknown_key_raises(self, db_session) -> None:
+        """
+        Passing an unknown column key in caller-supplied ``update_columns`` should
+        raise a clear ``ValueError`` instead of a downstream ``KeyError`` from
+        ``insert_stmt.excluded[col]``. Validates the keys-namespace contract for
+        ``update_columns``.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="not_a_column"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["id"],
+                on_conflict_update=True,
+                update_columns=["col_a", "not_a_column"],
+            )
+
+    def test_conflict_columns_normalized_to_keys_for_default_update_exclusion(
+        self, db_session
+    ) -> None:
+        """
+        ``conflict_columns`` are passed in the names namespace (per SQLAlchemy's
+        ``index_elements``), but the default ``update_columns`` filter compares
+        against the keys namespace. The helper must translate names → keys via
+        the model's ``name_to_key`` map so the conflict column is correctly
+        excluded from the SET clause.
+
+        Concretely: if the conflict column has ``Column('db_uniq', key=
+        'uniq_attr')`` and the helper compared the raw name ``'db_uniq'``
+        against the keys list ``['pk', 'uniq_attr', 'payload']``, the conflict
+        column would NOT be filtered out, and the SET clause would include
+        ``uniq_attr = excluded.uniq_attr`` (a no-op write of the same value
+        the conflict matched on). The new value from any subsequent input
+        would still be visible in ``excluded`` and overwrite, but the test
+        below confirms the conflict column does not appear in the update set
+        when the default is applied.
+        """
+
+        from sqlalchemy import Column, Integer, String
+        from sqlalchemy.orm import DeclarativeBase
+
+        db_session.execute(
+            text(
+                "CREATE TEMP TABLE test_namekey_conflict ("
+                " pk SERIAL PRIMARY KEY,"
+                " db_uniq TEXT NOT NULL UNIQUE,"
+                " payload TEXT)"
+            )
+        )
+
+        class TempBase(DeclarativeBase):
+            pass
+
+        class NameKeyConflict(TempBase):
+            __tablename__ = "test_namekey_conflict"
+            pk = Column(Integer, primary_key=True)
+            # Conflict column has db name "db_uniq" but Python key "uniq_attr".
+            # NOTE: explicit `key=` is required — the class-attribute name does
+            # NOT propagate to Column.key automatically (only the position-arg
+            # name does, which sets BOTH name and key when no `key=` is given).
+            uniq_attr = Column(
+                "db_uniq",
+                String,
+                unique=True,
+                nullable=False,
+                key="uniq_attr",
+            )
+            payload = Column(String)
+
+        # Seed.
+        upsert_model_instances(
+            session=db_session,
+            model_instances=[NameKeyConflict(uniq_attr="K", payload="first")],
+            conflict_columns=["db_uniq"],  # NAME namespace, per the contract.
+            on_conflict_update=True,
+        )
+
+        # Re-upsert with same uniq_attr but different payload. With the
+        # default update_columns, the SET clause must include payload but
+        # NOT uniq_attr (it's the conflict column).
+        upsert_model_instances(
+            session=db_session,
+            model_instances=[NameKeyConflict(uniq_attr="K", payload="second")],
+            conflict_columns=["db_uniq"],
+            on_conflict_update=True,
+        )
+
+        row = (
+            db_session.execute(
+                select(NameKeyConflict).where(NameKeyConflict.uniq_attr == "K")
+            )
+            .scalars()
+            .one()
+        )
+        # Payload was updated, conflict-column value is unchanged.
+        assert row.payload == "second"
+        assert row.uniq_attr == "K"
+        # Only one row exists (conflict was matched, not duplicated).
+        count = (
+            db_session.execute(
+                text("SELECT count(*) FROM test_namekey_conflict")
+            ).scalar()
+        )
+        assert count == 1
+
     def test_default_update_columns_excludes_pk_with_distinct_name_and_key(
         self, db_session
     ) -> None:
@@ -534,8 +657,12 @@ class TestUpsertModelInstances:
 
         class NameKeyModel(TempBase):
             __tablename__ = "test_namekey"
-            # PK column has db name "db_pk" but Python attr "pk_attr".
-            pk_attr = Column("db_pk", Integer, primary_key=True)
+            # PK column has db name "db_pk" and Python KEY "pk_attr". The
+            # explicit `key=` is required: SQLAlchemy does NOT auto-derive
+            # Column.key from the class attribute name. Without `key=`, both
+            # .name and .key would equal "db_pk" and the col.name vs col.key
+            # distinction this test exists to verify would be undetectable.
+            pk_attr = Column("db_pk", Integer, primary_key=True, key="pk_attr")
             unique_key = Column(String, unique=True, nullable=False)
             payload = Column(String)
 

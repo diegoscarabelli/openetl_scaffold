@@ -170,10 +170,17 @@ def upsert_model_instances(
     :param session: An open SQLAlchemy Session.
     :param model_instances: ORM instances to insert or update. All instances must be of
         the same model type.
-    :param update_columns: Columns to set on conflict. Defaults to all columns except
-        the conflict columns, primary-key columns, ``create_ts``, and ``update_ts``.
-    :param conflict_columns: Column names forming the unique conflict target. Must match
-        a UNIQUE constraint in the DDL. If None, a simple insert is performed.
+    :param update_columns: Column **keys** (Python attribute names, matching
+        ``Column.key``) to set on conflict. Defaults to all columns except the
+        conflict columns, primary-key columns, ``create_ts``, and ``update_ts``.
+    :param conflict_columns: Column **names** (database column names, matching
+        ``Column.name``) forming the unique conflict target. Must match a UNIQUE
+        constraint in the DDL. SQLAlchemy's ``index_elements`` expects names,
+        which is why this parameter uses the names namespace; ``update_columns``
+        and ``returning_columns`` use the keys namespace instead. For the common
+        case ``Column('foo', ...)`` the two are identical; they only diverge for
+        ``Column('db_name', key='attr_name')``. If None, a simple insert is
+        performed.
     :param on_conflict_update: If True, update rows on conflict; if False, ignore
         conflicts and do not update existing rows.
     :param latest_check_column: Only update if incoming value >= (or >) existing.
@@ -264,11 +271,17 @@ def _upsert_values(
     :param model: SQLAlchemy ORM model class representing the table.
     :param values: List of dicts mapping column names to values.
     :param session: An open SQLAlchemy Session.
-    :param update_columns: Columns to update on conflict. Defaults to all columns
-        except the conflict columns, primary-key columns, ``create_ts``, and
-        ``update_ts``.
-    :param conflict_columns: Columns forming the unique conflict target. If None, a
-        simple insert is performed.
+    :param update_columns: Column **keys** (Python attribute names, matching
+        ``Column.key``) to update on conflict. Defaults to all columns except the
+        conflict columns, primary-key columns, ``create_ts``, and ``update_ts``.
+    :param conflict_columns: Column **names** (database column names, matching
+        ``Column.name``) forming the unique conflict target. SQLAlchemy's
+        ``index_elements`` parameter expects names, which is why this list uses
+        the names namespace; ``update_columns`` and ``returning_columns`` use
+        the keys namespace instead. For the common case ``Column('foo', ...)``
+        the two are identical and the distinction does not matter; it only
+        diverges when callers do ``Column('db_name', key='attr_name')``. If
+        None, a simple insert is performed.
     :param on_conflict_update: If True, update rows on conflict; if False, ignore
         conflicts.
     :param latest_check_column: Only update when the incoming value is greater than (or
@@ -310,25 +323,51 @@ def _upsert_values(
         query_type = QueryType.INSERT_IGNORE if conflict_columns else QueryType.INSERT
 
     conflict_columns = conflict_columns or []
-    model_columns = model.__table__.columns.keys()
+    model_columns = model.__table__.columns.keys()  # KEYS namespace.
+    column_names = {col.name for col in model.__table__.columns}  # NAMES namespace.
+    name_to_key = {col.name: col.key for col in model.__table__.columns}
 
-    # Validate `returning_columns` so callers get a clear ValueError up
-    # front instead of either an opaque AttributeError from
-    # `getattr(model, col)` further down (unknown column case) or a
-    # silent empty-list result that superficially looks like "no rows
-    # came back" (empty-list case).
+    # SQLAlchemy uses two namespaces for the same column:
+    # - col.name = the database column name (used by the SQL emitted by
+    #   `index_elements=conflict_columns` in `on_conflict_do_update`).
+    # - col.key  = the Python attribute name (used by `excluded[col]` and
+    #   `getattr(model, col)`).
+    # They are equal for the common case `Column('foo', ...)`, but diverge
+    # when callers do `Column('db_name', key='attr_name')`. The contract
+    # this helper enforces:
+    #   - `conflict_columns` entries are NAMES (matching SQLAlchemy's
+    #     `index_elements`).
+    #   - `update_columns` and `returning_columns` entries are KEYS
+    #     (matching `excluded[...]` and `getattr(model, ...)`).
+    # Validate up front so a mismatch fails with a clear error here rather
+    # than an opaque AttributeError / KeyError deep in execution.
+    unknown_conflict = [c for c in conflict_columns if c not in column_names]
+    if unknown_conflict:
+        raise ValueError(
+            f"`conflict_columns` references column name(s) not present on "
+            f"{model.__name__}: {unknown_conflict}. Valid column names: "
+            f"{sorted(column_names)}"
+        )
+    if update_columns is not None:
+        unknown_update = [c for c in update_columns if c not in model_columns]
+        if unknown_update:
+            raise ValueError(
+                f"`update_columns` references column key(s) not present on "
+                f"{model.__name__}: {unknown_update}. Valid column keys: "
+                f"{sorted(model_columns)}"
+            )
     if returning_columns is not None:
         if not returning_columns:
             raise ValueError(
                 "`returning_columns` must be a non-empty list when "
                 "provided. Pass None to opt out of the RETURNING path."
             )
-        unknown = [col for col in returning_columns if col not in model_columns]
-        if unknown:
+        unknown_returning = [c for c in returning_columns if c not in model_columns]
+        if unknown_returning:
             raise ValueError(
-                f"`returning_columns` references column(s) not present "
-                f"on {model.__name__}: {unknown}. Valid columns: "
-                f"{sorted(model_columns)}"
+                f"`returning_columns` references column key(s) not present "
+                f"on {model.__name__}: {unknown_returning}. Valid column "
+                f"keys: {sorted(model_columns)}"
             )
 
     returned_values: List[Dict[str, Any]] = []
@@ -337,21 +376,20 @@ def _upsert_values(
     # - conflict columns (used to identify the row, must not change),
     # - primary-key columns (immutable; for an auto-increment PK that's
     #   not present on the input dict, leaving it would generate
-    #   `SET pk = NULL` and either fail or assign a new sequence value),
+    #   `SET pk = excluded.pk` which substitutes the next sequence value
+    #   and silently renumbers the PK on every conflict),
     # - create_ts (audit column; should reflect original insert time),
     # - update_ts (set explicitly inside the UPSERT branch below if
     #   present on the model).
     #
-    # We use `col.key` (Python attribute / SQLAlchemy key) rather than
-    # `col.name` (database column name) because `model_columns` and
-    # `update_columns` operate on keys; for models that override the
-    # mapping with `Column('db_name', ..., key='attr_name')` the two
-    # differ and a name-based set would fail to match.
+    # All comparisons happen in the KEYS namespace. We translate
+    # `conflict_columns` (names per the public contract) to keys via
+    # `name_to_key` so the set membership actually matches; PK columns
+    # use `col.key` directly.
     pk_columns = {col.key for col in model.__table__.primary_key.columns}
     if update_columns is None:
-        excluded_cols = (
-            set(conflict_columns) | pk_columns | {"create_ts", "update_ts"}
-        )
+        conflict_keys = {name_to_key[c] for c in conflict_columns}
+        excluded_cols = conflict_keys | pk_columns | {"create_ts", "update_ts"}
         update_columns = [col for col in model_columns if col not in excluded_cols]
 
     # Clamp chunk_size so total parameters stay within the
