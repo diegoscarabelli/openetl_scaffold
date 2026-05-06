@@ -648,6 +648,40 @@ class TestUpsertModelInstances:
                 latest_check_column="not_a_column",
             )
 
+    def test_conflict_columns_duplicates_raises(self, db_session) -> None:
+        """
+        Duplicate entries in ``conflict_columns`` would emit malformed SQL via
+        SQLAlchemy's ``index_elements``. Surface as a clear ``ValueError``
+        instead.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="duplicate"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["id", "id"],
+                on_conflict_update=True,
+            )
+
+    def test_update_columns_duplicates_raises(self, db_session) -> None:
+        """
+        Duplicate entries in ``update_columns`` would build a SET dict that
+        looks like it has more keys than it does (the second duplicate
+        overwrites the first in the dict comprehension), silently masking
+        intent. Surface as a clear ``ValueError`` instead.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="duplicate"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["id"],
+                on_conflict_update=True,
+                update_columns=["col_a", "col_a"],
+            )
+
     def test_returning_columns_duplicates_raises(self, db_session) -> None:
         """
         Duplicate entries in ``returning_columns`` would silently collide in
