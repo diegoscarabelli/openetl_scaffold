@@ -336,6 +336,72 @@ class TestUpsertModelInstances:
         assert row.name == "newer_version"
         assert row.version == 6
 
+    def test_latest_check_column_returning_shorter_than_input(
+        self, db_session
+    ) -> None:
+        """
+        UPSERT + ``latest_check_column`` + ``returning_columns`` is the documented
+        exception to the "one row per input row" guarantee: when the latest-check
+        ``WHERE`` clause prevents the update, PostgreSQL treats the conflict as
+        DO NOTHING and emits no ``RETURNING`` row, so the result list is shorter
+        than the input. Locks in the contract documented in the helper docstring.
+        """
+
+        db_session.execute(
+            text(
+                "CREATE TEMP TABLE test_version_returning ("
+                " id INTEGER PRIMARY KEY,"
+                " name TEXT,"
+                " version INTEGER NOT NULL)"
+            )
+        )
+
+        class TempBase(DeclarativeBase):
+            pass
+
+        class TempVersion(TempBase):
+            __tablename__ = "test_version_returning"
+            id = Column(Integer, primary_key=True)
+            name = Column(String)
+            version = Column(Integer)
+
+        # Seed: id=1 at version 5.
+        _upsert_values(
+            model=TempVersion,
+            values=[{"id": 1, "name": "initial", "version": 5}],
+            session=db_session,
+            conflict_columns=["id"],
+            on_conflict_update=True,
+            latest_check_column="version",
+        )
+
+        # Mix: id=1 with stale version (will be blocked) + id=2 fresh insert.
+        # Position-aligned guarantee NOT held: result has 1 row (only id=2),
+        # not 2 rows.
+        result = _upsert_values(
+            model=TempVersion,
+            values=[
+                {"id": 1, "name": "stale", "version": 3},
+                {"id": 2, "name": "fresh", "version": 1},
+            ],
+            session=db_session,
+            conflict_columns=["id"],
+            on_conflict_update=True,
+            latest_check_column="version",
+            returning_columns=["id", "name", "version"],
+        )
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["id"] == 2
+        # id=1 was NOT updated (stale).
+        existing = (
+            db_session.execute(select(TempVersion).where(TempVersion.id == 1))
+            .scalars()
+            .first()
+        )
+        assert existing.name == "initial"
+        assert existing.version == 5
+
     def test_latest_check_column_inclusive(self, db_session) -> None:
         """
         Test latest_check_column with >= comparison (inclusive).
@@ -403,6 +469,433 @@ class TestUpsertModelInstances:
         assert len(results) == 1
         assert results[0].id == 1
         assert results[0].col_a == "A"
+
+    def test_returning_columns_empty_list_raises(self, db_session) -> None:
+        """
+        Passing ``returning_columns=[]`` is a programming error: it would skip the
+        RETURNING path but break the contract that "if you ask for results, you
+        get one row per input." Surface it as a clear ValueError up front instead
+        of silently returning an empty list.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="non-empty"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["id"],
+                on_conflict_update=True,
+                returning_columns=[],
+            )
+
+    def test_returning_columns_unknown_column_raises(self, db_session) -> None:
+        """
+        Passing an unknown column key in ``returning_columns`` should raise a
+        ``ValueError`` listing the offending columns, not a bare ``AttributeError``
+        from ``getattr(model, col)`` deep in the helper. ``returning_columns``
+        operate in the keys namespace (matching ``Column.key``), unlike
+        ``conflict_columns`` which use names.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="not_a_column"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["id"],
+                on_conflict_update=True,
+                returning_columns=["id", "not_a_column"],
+            )
+
+    def test_conflict_columns_unknown_name_raises(self, db_session) -> None:
+        """
+        Passing an unknown column name in ``conflict_columns`` should raise a
+        clear ``ValueError`` listing the offending entry, not an opaque
+        SQLAlchemy ``index_elements`` failure later. Validates the names-
+        namespace contract for ``conflict_columns``.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="not_a_column"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["not_a_column"],
+                on_conflict_update=True,
+            )
+
+    def test_update_columns_unknown_key_raises(self, db_session) -> None:
+        """
+        Passing an unknown column key in caller-supplied ``update_columns`` should
+        raise a clear ``ValueError`` instead of a downstream ``KeyError`` from
+        ``insert_stmt.excluded[col]``. Validates the keys-namespace contract for
+        ``update_columns``.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="not_a_column"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["id"],
+                on_conflict_update=True,
+                update_columns=["col_a", "not_a_column"],
+            )
+
+    def test_conflict_columns_normalized_to_keys_for_default_update_exclusion(
+        self, db_session
+    ) -> None:
+        """
+        ``conflict_columns`` are passed in the names namespace (per SQLAlchemy's
+        ``index_elements``), but the default ``update_columns`` filter compares
+        against the keys namespace. The helper must translate names → keys via
+        the model's ``name_to_key`` map so the conflict column is correctly
+        excluded from the SET clause.
+
+        Concretely: if the conflict column has ``Column('db_uniq', key=
+        'uniq_attr')`` and the helper compared the raw name ``'db_uniq'``
+        against the keys list ``['pk', 'uniq_attr', 'payload']``, the conflict
+        column would NOT be filtered out, and the SET clause would include
+        ``uniq_attr = excluded.uniq_attr`` (a no-op write of the same value
+        the conflict matched on). The new value from any subsequent input
+        would still be visible in ``excluded`` and overwrite, but the test
+        below confirms the conflict column does not appear in the update set
+        when the default is applied.
+        """
+
+        from sqlalchemy import Column, Integer, String
+        from sqlalchemy.orm import DeclarativeBase
+
+        db_session.execute(
+            text(
+                "CREATE TEMP TABLE test_namekey_conflict ("
+                " pk SERIAL PRIMARY KEY,"
+                " db_uniq TEXT NOT NULL UNIQUE,"
+                " payload TEXT)"
+            )
+        )
+
+        class TempBase(DeclarativeBase):
+            pass
+
+        class NameKeyConflict(TempBase):
+            __tablename__ = "test_namekey_conflict"
+            pk = Column(Integer, primary_key=True)
+            # Conflict column has db name "db_uniq" but Python key "uniq_attr".
+            # NOTE: explicit `key=` is required — the class-attribute name does
+            # NOT propagate to Column.key automatically (only the position-arg
+            # name does, which sets BOTH name and key when no `key=` is given).
+            uniq_attr = Column(
+                "db_uniq",
+                String,
+                unique=True,
+                nullable=False,
+                key="uniq_attr",
+            )
+            payload = Column(String)
+
+        # Seed.
+        upsert_model_instances(
+            session=db_session,
+            model_instances=[NameKeyConflict(uniq_attr="K", payload="first")],
+            conflict_columns=["db_uniq"],  # NAME namespace, per the contract.
+            on_conflict_update=True,
+        )
+
+        # Re-upsert with same uniq_attr but different payload. With the
+        # default update_columns, the SET clause must include payload but
+        # NOT uniq_attr (it's the conflict column).
+        upsert_model_instances(
+            session=db_session,
+            model_instances=[NameKeyConflict(uniq_attr="K", payload="second")],
+            conflict_columns=["db_uniq"],
+            on_conflict_update=True,
+        )
+
+        row = (
+            db_session.execute(
+                select(NameKeyConflict).where(NameKeyConflict.uniq_attr == "K")
+            )
+            .scalars()
+            .one()
+        )
+        # Payload was updated, conflict-column value is unchanged.
+        assert row.payload == "second"
+        assert row.uniq_attr == "K"
+        # Only one row exists (conflict was matched, not duplicated).
+        count = (
+            db_session.execute(
+                text("SELECT count(*) FROM test_namekey_conflict")
+            ).scalar()
+        )
+        assert count == 1
+
+    def test_latest_check_column_unknown_key_raises(self, db_session) -> None:
+        """
+        Passing an unknown column key as ``latest_check_column`` should raise a
+        clear ``ValueError`` instead of an opaque ``KeyError`` from
+        ``insert_stmt.excluded[latest_check_column]`` deep in execution. Same
+        validation discipline as ``update_columns`` and ``returning_columns``.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="latest_check_column"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["id"],
+                on_conflict_update=True,
+                latest_check_column="not_a_column",
+            )
+
+    def test_returning_columns_duplicates_raises(self, db_session) -> None:
+        """
+        Duplicate entries in ``returning_columns`` would silently collide in
+        ``row._asdict()`` (the second value overwrites the first). Surface as
+        a clear ``ValueError`` instead.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="duplicate"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["id"],
+                on_conflict_update=True,
+                returning_columns=["id", "id"],
+            )
+
+    def test_insert_ignore_returning_with_name_key_divergent_conflict_column(
+        self, db_session
+    ) -> None:
+        """
+        The INSERT_IGNORE + returning_columns no-op DO UPDATE trick must
+        translate ``conflict_columns[0]`` (a NAME) to its key before indexing
+        ``excluded[...]`` and building ``set_``. Without the translation this
+        path would ``KeyError`` on any model with ``Column.name != Column.key``.
+        Locks in the bug fix flagged by Copilot review 4239273175.
+        """
+
+        from sqlalchemy import Column, Integer, String
+        from sqlalchemy.orm import DeclarativeBase
+
+        db_session.execute(
+            text(
+                "CREATE TEMP TABLE test_namekey_insert_ignore ("
+                " pk SERIAL PRIMARY KEY,"
+                " db_uniq TEXT NOT NULL UNIQUE,"
+                " payload TEXT)"
+            )
+        )
+
+        class TempBase(DeclarativeBase):
+            pass
+
+        class NameKeyIgnore(TempBase):
+            __tablename__ = "test_namekey_insert_ignore"
+            pk = Column(Integer, primary_key=True)
+            uniq_attr = Column(
+                "db_uniq", String, unique=True, nullable=False, key="uniq_attr"
+            )
+            payload = Column(String)
+
+        # Seed.
+        upsert_model_instances(
+            session=db_session,
+            model_instances=[NameKeyIgnore(uniq_attr="K", payload="first")],
+            conflict_columns=["db_uniq"],
+            on_conflict_update=True,
+        )
+
+        # INSERT_IGNORE with returning_columns hits the no-op DO UPDATE path.
+        # Without the name_to_key translation this would raise KeyError on
+        # `excluded['db_uniq']` (since excluded is keyed by KEYS).
+        result = upsert_model_instances(
+            session=db_session,
+            model_instances=[NameKeyIgnore(uniq_attr="K", payload="ignored")],
+            conflict_columns=["db_uniq"],
+            on_conflict_update=False,
+            returning_columns=["uniq_attr", "payload"],
+        )
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].uniq_attr == "K"
+        assert result[0].payload == "first"  # existing value preserved.
+
+    def test_upsert_with_only_pk_and_audit_columns_falls_back_gracefully(
+        self, db_session
+    ) -> None:
+        """
+        For tables with only PK + conflict + audit columns and no
+        ``update_ts``, the default ``update_columns`` list is empty. The
+        helper must NOT emit ``ON CONFLICT (...) DO UPDATE SET`` with an empty
+        SET clause (invalid SQL); the no-op DO UPDATE trick is used as a
+        fallback so the conflict path still fires.
+        """
+
+        from sqlalchemy import Column, Integer
+        from sqlalchemy.orm import DeclarativeBase
+
+        db_session.execute(
+            text(
+                "CREATE TEMP TABLE test_pk_only ("
+                " user_id INTEGER NOT NULL,"
+                " group_id INTEGER NOT NULL,"
+                " PRIMARY KEY (user_id, group_id))"
+            )
+        )
+
+        class TempBase(DeclarativeBase):
+            pass
+
+        class Membership(TempBase):
+            __tablename__ = "test_pk_only"
+            user_id = Column(Integer, primary_key=True)
+            group_id = Column(Integer, primary_key=True)
+            # No update_ts and no other mutable columns.
+
+        # First upsert inserts.
+        upsert_model_instances(
+            session=db_session,
+            model_instances=[Membership(user_id=1, group_id=10)],
+            conflict_columns=["user_id", "group_id"],
+            on_conflict_update=True,
+        )
+
+        # Second upsert hits the conflict path. With the old code this
+        # would emit `ON CONFLICT (...) DO UPDATE SET` with no SET targets
+        # and Postgres would raise a syntax error.
+        upsert_model_instances(
+            session=db_session,
+            model_instances=[Membership(user_id=1, group_id=10)],
+            conflict_columns=["user_id", "group_id"],
+            on_conflict_update=True,
+        )
+
+        # Row exists, no duplicates created.
+        count = (
+            db_session.execute(text("SELECT count(*) FROM test_pk_only")).scalar()
+        )
+        assert count == 1
+
+    def test_default_update_columns_excludes_pk_with_distinct_name_and_key(
+        self, db_session
+    ) -> None:
+        """
+        SQLAlchemy ``Column`` lets callers specify a database column ``name`` that
+        differs from the Python attribute ``key`` (e.g. ``Column('db_name', ...,
+        key='attr_name')``). The default ``update_columns`` must exclude PK columns
+        regardless of which namespace conflict_columns/model_columns operate in.
+        Locks in the use of ``col.key`` (not ``col.name``) when building the PK
+        exclusion set.
+        """
+
+        from sqlalchemy import Column, Integer, String
+        from sqlalchemy.orm import DeclarativeBase
+
+        db_session.execute(
+            text(
+                "CREATE TEMP TABLE test_namekey ("
+                " db_pk SERIAL PRIMARY KEY,"
+                " unique_key TEXT NOT NULL UNIQUE,"
+                " payload TEXT)"
+            )
+        )
+
+        class TempBase(DeclarativeBase):
+            pass
+
+        class NameKeyModel(TempBase):
+            __tablename__ = "test_namekey"
+            # PK column has db name "db_pk" and Python KEY "pk_attr". The
+            # explicit `key=` is required: SQLAlchemy does NOT auto-derive
+            # Column.key from the class attribute name. Without `key=`, both
+            # .name and .key would equal "db_pk" and the col.name vs col.key
+            # distinction this test exists to verify would be undetectable.
+            pk_attr = Column("db_pk", Integer, primary_key=True, key="pk_attr")
+            unique_key = Column(String, unique=True, nullable=False)
+            payload = Column(String)
+
+        # Seed a row; let SERIAL assign the PK.
+        _upsert_values(
+            model=NameKeyModel,
+            values=[{"unique_key": "K", "payload": "first"}],
+            session=db_session,
+            conflict_columns=["unique_key"],
+            on_conflict_update=True,
+        )
+        original_pk = (
+            db_session.execute(select(NameKeyModel).where(NameKeyModel.unique_key == "K"))
+            .scalars()
+            .one()
+            .pk_attr
+        )
+
+        # Re-upsert on the unique_key conflict, WITHOUT supplying pk_attr.
+        # With the old name-based PK exclusion, pk_attr would slip into
+        # update_columns and the SET clause would do `SET db_pk =
+        # excluded.db_pk` — and excluded.db_pk would be the NEXT sequence
+        # value (not NULL, because SERIAL provides a default), silently
+        # renumbering the PK on every conflict and breaking any FK that
+        # pointed at it.
+        _upsert_values(
+            model=NameKeyModel,
+            values=[{"unique_key": "K", "payload": "second"}],
+            session=db_session,
+            conflict_columns=["unique_key"],
+            on_conflict_update=True,
+        )
+
+        # PK preserved across the conflict update; payload updated.
+        row = (
+            db_session.execute(select(NameKeyModel).where(NameKeyModel.unique_key == "K"))
+            .scalars()
+            .one()
+        )
+        assert row.pk_attr == original_pk, (
+            f"PK was renumbered: {original_pk} -> {row.pk_attr}. "
+            "Default update_columns must use col.key (not col.name) when "
+            "building the PK exclusion set."
+        )
+        assert row.payload == "second"
+
+    def test_insert_ignore_returning_position_aligned(self, db_session) -> None:
+        """
+        INSERT_IGNORE with ``returning_columns`` returns one row per input row, in
+        input order (position-aligned), with existing values preserved for
+        conflicted rows. Implemented via the no-op ``DO UPDATE`` trick.
+        """
+
+        # Seed a subset of rows the second pass will conflict on.
+        upsert_model_instances(
+            session=db_session,
+            model_instances=[
+                MyTest(id=1, col_a="A"),
+                MyTest(id=3, col_a="C"),
+            ],
+            conflict_columns=["id"],
+            on_conflict_update=False,
+        )
+
+        # Mix of conflict (1), new (2), conflict (3) in non-trivial order to
+        # stress position-alignment.
+        results = upsert_model_instances(
+            session=db_session,
+            model_instances=[
+                MyTest(id=1, col_a="Z"),
+                MyTest(id=2, col_a="B"),
+                MyTest(id=3, col_a="Z"),
+            ],
+            conflict_columns=["id"],
+            on_conflict_update=False,
+            returning_columns=["id", "col_a"],
+        )
+        assert results is not None
+        assert len(results) == 3
+        # Position-aligned: result[i] corresponds to input[i].
+        assert [r.id for r in results] == [1, 2, 3]
+        # Existing values preserved for conflicts; new value for the insert.
+        assert [r.col_a for r in results] == ["A", "B", "C"]
 
     def test_returning_columns_none_returns_none(self, db_session) -> None:
         """
@@ -650,7 +1143,9 @@ class TestChunkedUpsert:
 
     def test_insert_ignore_returning_across_chunks(self, db_session) -> None:
         """
-        Test INSERT_IGNORE with RETURNING re-queries per chunk.
+        INSERT_IGNORE with `returning_columns` returns one row per input row
+        across chunked statements, in input order, with existing values preserved
+        for conflicted rows.
         """
 
         # Seed a subset of rows.
@@ -676,14 +1171,12 @@ class TestChunkedUpsert:
         )
         assert results is not None
         assert len(results) == 5
-        by_id = {r["id"]: r["col_a"] for r in results}
-        # Existing rows keep original values.
-        assert by_id[1] == "A"
-        assert by_id[3] == "C"
-        # New rows have the inserted values.
-        assert by_id[2] == "new_2"
-        assert by_id[4] == "new_4"
-        assert by_id[5] == "new_5"
+        # Position-aligned: result[i] corresponds to input[i] across chunk
+        # boundaries. Locks in the no-op DO UPDATE trick's input-order
+        # guarantee even when the batch is split.
+        assert [r["id"] for r in results] == [1, 2, 3, 4, 5]
+        # Existing rows (1, 3) keep their original values; new rows take input.
+        assert [r["col_a"] for r in results] == ["A", "new_2", "C", "new_4", "new_5"]
 
     def test_plain_insert_across_chunks(self, db_session) -> None:
         """
