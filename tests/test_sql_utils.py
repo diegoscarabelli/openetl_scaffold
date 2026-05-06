@@ -336,6 +336,72 @@ class TestUpsertModelInstances:
         assert row.name == "newer_version"
         assert row.version == 6
 
+    def test_latest_check_column_returning_shorter_than_input(
+        self, db_session
+    ) -> None:
+        """
+        UPSERT + ``latest_check_column`` + ``returning_columns`` is the documented
+        exception to the "one row per input row" guarantee: when the latest-check
+        ``WHERE`` clause prevents the update, PostgreSQL treats the conflict as
+        DO NOTHING and emits no ``RETURNING`` row, so the result list is shorter
+        than the input. Locks in the contract documented in the helper docstring.
+        """
+
+        db_session.execute(
+            text(
+                "CREATE TEMP TABLE test_version_returning ("
+                " id INTEGER PRIMARY KEY,"
+                " name TEXT,"
+                " version INTEGER NOT NULL)"
+            )
+        )
+
+        class TempBase(DeclarativeBase):
+            pass
+
+        class TempVersion(TempBase):
+            __tablename__ = "test_version_returning"
+            id = Column(Integer, primary_key=True)
+            name = Column(String)
+            version = Column(Integer)
+
+        # Seed: id=1 at version 5.
+        _upsert_values(
+            model=TempVersion,
+            values=[{"id": 1, "name": "initial", "version": 5}],
+            session=db_session,
+            conflict_columns=["id"],
+            on_conflict_update=True,
+            latest_check_column="version",
+        )
+
+        # Mix: id=1 with stale version (will be blocked) + id=2 fresh insert.
+        # Position-aligned guarantee NOT held: result has 1 row (only id=2),
+        # not 2 rows.
+        result = _upsert_values(
+            model=TempVersion,
+            values=[
+                {"id": 1, "name": "stale", "version": 3},
+                {"id": 2, "name": "fresh", "version": 1},
+            ],
+            session=db_session,
+            conflict_columns=["id"],
+            on_conflict_update=True,
+            latest_check_column="version",
+            returning_columns=["id", "name", "version"],
+        )
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["id"] == 2
+        # id=1 was NOT updated (stale).
+        existing = (
+            db_session.execute(select(TempVersion).where(TempVersion.id == 1))
+            .scalars()
+            .first()
+        )
+        assert existing.name == "initial"
+        assert existing.version == 5
+
     def test_latest_check_column_inclusive(self, db_session) -> None:
         """
         Test latest_check_column with >= comparison (inclusive).
@@ -403,6 +469,79 @@ class TestUpsertModelInstances:
         assert len(results) == 1
         assert results[0].id == 1
         assert results[0].col_a == "A"
+
+    def test_returning_columns_empty_list_raises(self, db_session) -> None:
+        """
+        Passing ``returning_columns=[]`` is a programming error: it would skip the
+        RETURNING path but break the contract that "if you ask for results, you
+        get one row per input." Surface it as a clear ValueError up front instead
+        of silently returning an empty list.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="non-empty"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["id"],
+                on_conflict_update=True,
+                returning_columns=[],
+            )
+
+    def test_returning_columns_unknown_column_raises(self, db_session) -> None:
+        """
+        Passing an unknown column name in ``returning_columns`` should raise a
+        ``ValueError`` listing the offending columns, not a bare ``AttributeError``
+        from ``getattr(model, col)`` deep in the helper.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="not_a_column"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["id"],
+                on_conflict_update=True,
+                returning_columns=["id", "not_a_column"],
+            )
+
+    def test_insert_ignore_returning_position_aligned(self, db_session) -> None:
+        """
+        INSERT_IGNORE with ``returning_columns`` returns one row per input row, in
+        input order (position-aligned), with existing values preserved for
+        conflicted rows. Implemented via the no-op ``DO UPDATE`` trick.
+        """
+
+        # Seed a subset of rows the second pass will conflict on.
+        upsert_model_instances(
+            session=db_session,
+            model_instances=[
+                MyTest(id=1, col_a="A"),
+                MyTest(id=3, col_a="C"),
+            ],
+            conflict_columns=["id"],
+            on_conflict_update=False,
+        )
+
+        # Mix of conflict (1), new (2), conflict (3) in non-trivial order to
+        # stress position-alignment.
+        results = upsert_model_instances(
+            session=db_session,
+            model_instances=[
+                MyTest(id=1, col_a="Z"),
+                MyTest(id=2, col_a="B"),
+                MyTest(id=3, col_a="Z"),
+            ],
+            conflict_columns=["id"],
+            on_conflict_update=False,
+            returning_columns=["id", "col_a"],
+        )
+        assert results is not None
+        assert len(results) == 3
+        # Position-aligned: result[i] corresponds to input[i].
+        assert [r.id for r in results] == [1, 2, 3]
+        # Existing values preserved for conflicts; new value for the insert.
+        assert [r.col_a for r in results] == ["A", "B", "C"]
 
     def test_returning_columns_none_returns_none(self, db_session) -> None:
         """
@@ -650,7 +789,9 @@ class TestChunkedUpsert:
 
     def test_insert_ignore_returning_across_chunks(self, db_session) -> None:
         """
-        Test INSERT_IGNORE with RETURNING re-queries per chunk.
+        INSERT_IGNORE with `returning_columns` returns one row per input row
+        across chunked statements, in input order, with existing values preserved
+        for conflicted rows.
         """
 
         # Seed a subset of rows.
@@ -676,14 +817,12 @@ class TestChunkedUpsert:
         )
         assert results is not None
         assert len(results) == 5
-        by_id = {r["id"]: r["col_a"] for r in results}
-        # Existing rows keep original values.
-        assert by_id[1] == "A"
-        assert by_id[3] == "C"
-        # New rows have the inserted values.
-        assert by_id[2] == "new_2"
-        assert by_id[4] == "new_4"
-        assert by_id[5] == "new_5"
+        # Position-aligned: result[i] corresponds to input[i] across chunk
+        # boundaries. Locks in the no-op DO UPDATE trick's input-order
+        # guarantee even when the batch is split.
+        assert [r["id"] for r in results] == [1, 2, 3, 4, 5]
+        # Existing rows (1, 3) keep their original values; new rows take input.
+        assert [r["col_a"] for r in results] == ["A", "new_2", "C", "new_4", "new_5"]
 
     def test_plain_insert_across_chunks(self, db_session) -> None:
         """
