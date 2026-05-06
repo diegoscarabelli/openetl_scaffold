@@ -490,9 +490,11 @@ class TestUpsertModelInstances:
 
     def test_returning_columns_unknown_column_raises(self, db_session) -> None:
         """
-        Passing an unknown column name in ``returning_columns`` should raise a
+        Passing an unknown column key in ``returning_columns`` should raise a
         ``ValueError`` listing the offending columns, not a bare ``AttributeError``
-        from ``getattr(model, col)`` deep in the helper.
+        from ``getattr(model, col)`` deep in the helper. ``returning_columns``
+        operate in the keys namespace (matching ``Column.key``), unlike
+        ``conflict_columns`` which use names.
         """
 
         obj = MyTest(id=1, col_a="A")

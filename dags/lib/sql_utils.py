@@ -196,17 +196,18 @@ def upsert_model_instances(
 
         - INSERT, INSERT_IGNORE, plain UPSERT: one row per input row in input order
           (position-aligned).
-        - UPSERT + `latest_check_column`: NOT position-aligned. When the latest-check
-          `WHERE` clause prevents the update, PostgreSQL treats the conflict as DO
-          NOTHING and emits no `RETURNING` row, so the result list is shorter than
+        - UPSERT + ``latest_check_column``: NOT position-aligned. When the latest-check
+          ``WHERE`` clause prevents the update, PostgreSQL treats the conflict as DO
+          NOTHING and emits no ``RETURNING`` row, so the result list is shorter than
           the input. Reconcile by conflict-key value, not by index.
 
         Operational side effect (INSERT_IGNORE + returning_columns only): the helper
-        rewrites internally as a no-op `ON CONFLICT DO UPDATE SET <conflict_col> =
-        excluded.<conflict_col>` so `RETURNING` fires for conflicted rows. This still
-        executes an UPDATE in PostgreSQL: UPDATE triggers can fire, a new row version
-        is written to WAL, and stronger locks are taken than under pure DO NOTHING.
-        The pure DO NOTHING path is preserved when `returning_columns` is None.
+        rewrites internally as a no-op ``ON CONFLICT DO UPDATE SET <conflict_col> =
+        excluded.<conflict_col>`` so ``RETURNING`` fires for conflicted rows. This
+        still executes an UPDATE in PostgreSQL: UPDATE triggers can fire, a new row
+        version is written to WAL, and stronger locks are taken than under pure DO
+        NOTHING. The pure DO NOTHING path is preserved when ``returning_columns`` is
+        None.
     :param chunk_size: Maximum rows per INSERT statement. Clamped internally so the
         total parameter count never exceeds the psycopg3 limit.
     :return: List of model instances (with only the requested columns populated) if
@@ -300,18 +301,18 @@ def _upsert_values(
 
         - INSERT, INSERT_IGNORE, plain UPSERT: one row per input row in input order
           (position-aligned).
-        - UPSERT + `latest_check_column`: NOT position-aligned. When the latest-check
-          `WHERE` clause prevents the update, PostgreSQL treats the conflict as DO
-          NOTHING and emits no `RETURNING` row, so the result list is shorter than
-          the input. Reconcile by conflict-key value, not by index.
+        - UPSERT + ``latest_check_column``: NOT position-aligned. When the
+          latest-check ``WHERE`` clause prevents the update, PostgreSQL treats the
+          conflict as DO NOTHING and emits no ``RETURNING`` row, so the result list
+          is shorter than the input. Reconcile by conflict-key value, not by index.
 
         For INSERT_IGNORE the helper internally rewrites the statement using a no-op
-        `DO UPDATE` (assigning a conflict column to itself) so `RETURNING` fires for
-        both newly-inserted and conflicted rows; this means an UPDATE actually
+        ``DO UPDATE`` (assigning a conflict column to itself) so ``RETURNING`` fires
+        for both newly-inserted and conflicted rows; this means an UPDATE actually
         executes in PostgreSQL on conflict (UPDATE triggers can fire, a new row
         version is written to WAL, stronger locks are taken than under pure DO
-        NOTHING). The pure DO NOTHING path is preserved when `returning_columns` is
-        None.
+        NOTHING). The pure DO NOTHING path is preserved when ``returning_columns``
+        is None.
     :param chunk_size: Maximum rows per INSERT statement. Clamped internally so the
         total parameter count never exceeds the psycopg3 limit.
     :return: List of dicts with returned values if returning_columns is specified,
