@@ -628,6 +628,24 @@ class TestUpsertModelInstances:
         )
         assert count == 1
 
+    def test_latest_check_column_unknown_key_raises(self, db_session) -> None:
+        """
+        Passing an unknown column key as ``latest_check_column`` should raise a
+        clear ``ValueError`` instead of an opaque ``KeyError`` from
+        ``insert_stmt.excluded[latest_check_column]`` deep in execution. Same
+        validation discipline as ``update_columns`` and ``returning_columns``.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="latest_check_column"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["id"],
+                on_conflict_update=True,
+                latest_check_column="not_a_column",
+            )
+
     def test_returning_columns_duplicates_raises(self, db_session) -> None:
         """
         Duplicate entries in ``returning_columns`` would silently collide in

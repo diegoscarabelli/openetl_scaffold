@@ -183,11 +183,13 @@ def upsert_model_instances(
         performed.
     :param on_conflict_update: If True, update rows on conflict; if False, ignore
         conflicts and do not update existing rows.
-    :param latest_check_column: Only update if incoming value >= (or >) existing.
-        Prevents stale data from overwriting newer records.
+    :param latest_check_column: Column **key** (Python attribute name, matching
+        ``Column.key``) to gate the update on. Only updates if incoming value
+        >= (or >) existing. Prevents stale data from overwriting newer records.
     :param latest_check_inclusive: Use >= when True, > when False.
-    :param returning_columns: Column names to return via RETURNING. Must be a non-empty
-        list of valid model column names. If None, no RETURNING is issued and the
+    :param returning_columns: Column **keys** (Python attribute names, matching
+        ``Column.key``) to return via RETURNING. Must be a non-empty list of
+        valid model column keys. If None, no RETURNING is issued and the
         function returns None.
 
         Result-shape contract by mode:
@@ -269,7 +271,9 @@ def _upsert_values(
     lists are split into chunks to stay within the psycopg3 parameter limit.
 
     :param model: SQLAlchemy ORM model class representing the table.
-    :param values: List of dicts mapping column names to values.
+    :param values: List of dicts mapping column **keys** (Python attribute
+        names, matching ``Column.key``) to values. SQLAlchemy translates keys
+        to database column names when emitting SQL.
     :param session: An open SQLAlchemy Session.
     :param update_columns: Column **keys** (Python attribute names, matching
         ``Column.key``) to update on conflict. Defaults to all columns except the
@@ -284,11 +288,13 @@ def _upsert_values(
         None, a simple insert is performed.
     :param on_conflict_update: If True, update rows on conflict; if False, ignore
         conflicts.
-    :param latest_check_column: Only update when the incoming value is greater than (or
-        >=) the existing value.
+    :param latest_check_column: Column **key** (Python attribute name, matching
+        ``Column.key``) to gate the update on. Only updates when the incoming
+        value is greater than (or >=) the existing value.
     :param latest_check_inclusive: Use >= when True, > when False.
-    :param returning_columns: Column names to return via RETURNING. Must be a non-empty
-        list of valid model column names.
+    :param returning_columns: Column **keys** (Python attribute names, matching
+        ``Column.key``) to return via RETURNING. Must be a non-empty list of
+        valid model column keys.
 
         Result-shape contract by mode:
 
@@ -375,6 +381,12 @@ def _upsert_values(
             raise ValueError(
                 f"`update_columns` contains duplicate entries: {dup_update}."
             )
+    if latest_check_column is not None and latest_check_column not in model_columns:
+        raise ValueError(
+            f"`latest_check_column` is not a valid column key on "
+            f"{model.__name__}: {latest_check_column!r}. Valid column keys: "
+            f"{sorted(model_columns)}"
+        )
     if returning_columns is not None:
         if not returning_columns:
             raise ValueError(
