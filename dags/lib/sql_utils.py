@@ -341,7 +341,13 @@ def _upsert_values(
     # - create_ts (audit column; should reflect original insert time),
     # - update_ts (set explicitly inside the UPSERT branch below if
     #   present on the model).
-    pk_columns = {col.name for col in model.__table__.primary_key.columns}
+    #
+    # We use `col.key` (Python attribute / SQLAlchemy key) rather than
+    # `col.name` (database column name) because `model_columns` and
+    # `update_columns` operate on keys; for models that override the
+    # mapping with `Column('db_name', ..., key='attr_name')` the two
+    # differ and a name-based set would fail to match.
+    pk_columns = {col.key for col in model.__table__.primary_key.columns}
     if update_columns is None:
         excluded_cols = (
             set(conflict_columns) | pk_columns | {"create_ts", "update_ts"}

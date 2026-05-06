@@ -505,6 +505,83 @@ class TestUpsertModelInstances:
                 returning_columns=["id", "not_a_column"],
             )
 
+    def test_default_update_columns_excludes_pk_with_distinct_name_and_key(
+        self, db_session
+    ) -> None:
+        """
+        SQLAlchemy ``Column`` lets callers specify a database column ``name`` that
+        differs from the Python attribute ``key`` (e.g. ``Column('db_name', ...,
+        key='attr_name')``). The default ``update_columns`` must exclude PK columns
+        regardless of which namespace conflict_columns/model_columns operate in.
+        Locks in the use of ``col.key`` (not ``col.name``) when building the PK
+        exclusion set.
+        """
+
+        from sqlalchemy import Column, Integer, String
+        from sqlalchemy.orm import DeclarativeBase
+
+        db_session.execute(
+            text(
+                "CREATE TEMP TABLE test_namekey ("
+                " db_pk SERIAL PRIMARY KEY,"
+                " unique_key TEXT NOT NULL UNIQUE,"
+                " payload TEXT)"
+            )
+        )
+
+        class TempBase(DeclarativeBase):
+            pass
+
+        class NameKeyModel(TempBase):
+            __tablename__ = "test_namekey"
+            # PK column has db name "db_pk" but Python attr "pk_attr".
+            pk_attr = Column("db_pk", Integer, primary_key=True)
+            unique_key = Column(String, unique=True, nullable=False)
+            payload = Column(String)
+
+        # Seed a row; let SERIAL assign the PK.
+        _upsert_values(
+            model=NameKeyModel,
+            values=[{"unique_key": "K", "payload": "first"}],
+            session=db_session,
+            conflict_columns=["unique_key"],
+            on_conflict_update=True,
+        )
+        original_pk = (
+            db_session.execute(select(NameKeyModel).where(NameKeyModel.unique_key == "K"))
+            .scalars()
+            .one()
+            .pk_attr
+        )
+
+        # Re-upsert on the unique_key conflict, WITHOUT supplying pk_attr.
+        # With the old name-based PK exclusion, pk_attr would slip into
+        # update_columns and the SET clause would do `SET db_pk =
+        # excluded.db_pk` — and excluded.db_pk would be the NEXT sequence
+        # value (not NULL, because SERIAL provides a default), silently
+        # renumbering the PK on every conflict and breaking any FK that
+        # pointed at it.
+        _upsert_values(
+            model=NameKeyModel,
+            values=[{"unique_key": "K", "payload": "second"}],
+            session=db_session,
+            conflict_columns=["unique_key"],
+            on_conflict_update=True,
+        )
+
+        # PK preserved across the conflict update; payload updated.
+        row = (
+            db_session.execute(select(NameKeyModel).where(NameKeyModel.unique_key == "K"))
+            .scalars()
+            .one()
+        )
+        assert row.pk_attr == original_pk, (
+            f"PK was renumbered: {original_pk} -> {row.pk_attr}. "
+            "Default update_columns must use col.key (not col.name) when "
+            "building the PK exclusion set."
+        )
+        assert row.payload == "second"
+
     def test_insert_ignore_returning_position_aligned(self, db_session) -> None:
         """
         INSERT_IGNORE with ``returning_columns`` returns one row per input row, in
