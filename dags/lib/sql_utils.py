@@ -341,12 +341,26 @@ def _upsert_values(
     #     (matching `excluded[...]` and `getattr(model, ...)`).
     # Validate up front so a mismatch fails with a clear error here rather
     # than an opaque AttributeError / KeyError deep in execution.
+    def _duplicates(seq: List[str]) -> List[str]:
+        seen: set = set()
+        dups: List[str] = []
+        for item in seq:
+            if item in seen and item not in dups:
+                dups.append(item)
+            seen.add(item)
+        return dups
+
     unknown_conflict = [c for c in conflict_columns if c not in column_names]
     if unknown_conflict:
         raise ValueError(
             f"`conflict_columns` references column name(s) not present on "
             f"{model.__name__}: {unknown_conflict}. Valid column names: "
             f"{sorted(column_names)}"
+        )
+    dup_conflict = _duplicates(conflict_columns)
+    if dup_conflict:
+        raise ValueError(
+            f"`conflict_columns` contains duplicate entries: {dup_conflict}."
         )
     if update_columns is not None:
         unknown_update = [c for c in update_columns if c not in model_columns]
@@ -355,6 +369,11 @@ def _upsert_values(
                 f"`update_columns` references column key(s) not present on "
                 f"{model.__name__}: {unknown_update}. Valid column keys: "
                 f"{sorted(model_columns)}"
+            )
+        dup_update = _duplicates(update_columns)
+        if dup_update:
+            raise ValueError(
+                f"`update_columns` contains duplicate entries: {dup_update}."
             )
     if returning_columns is not None:
         if not returning_columns:
@@ -368,6 +387,13 @@ def _upsert_values(
                 f"`returning_columns` references column key(s) not present "
                 f"on {model.__name__}: {unknown_returning}. Valid column "
                 f"keys: {sorted(model_columns)}"
+            )
+        dup_returning = _duplicates(returning_columns)
+        if dup_returning:
+            raise ValueError(
+                f"`returning_columns` contains duplicate entries: "
+                f"{dup_returning}. Duplicate column labels in RETURNING would "
+                f"silently collide in the result dict."
             )
 
     returned_values: List[Dict[str, Any]] = []
@@ -413,6 +439,20 @@ def _upsert_values(
                 update_dict["update_ts"] = datetime.now(
                     tz=timezone.utc,
                 )
+
+            # Defensive fallback: if update_dict is empty (e.g. a table with
+            # only PK + conflict + audit columns and no `update_ts`), the
+            # default `update_columns` list is empty and we'd otherwise emit
+            # `ON CONFLICT (...) DO UPDATE SET` with no SET targets, which is
+            # invalid SQL. Use the no-op DO UPDATE trick (assign a conflict
+            # column to itself) so the conflict path still fires and RETURNING
+            # works if requested. Operational footprint matches the documented
+            # INSERT_IGNORE+returning_columns path. `name_to_key` translates
+            # the name namespace (per the conflict_columns contract) to keys
+            # (what `excluded[...]` expects).
+            if not update_dict:
+                key_col = name_to_key[conflict_columns[0]]
+                update_dict[key_col] = insert_stmt.excluded[key_col]
 
             if latest_check_column:
                 excluded_col = insert_stmt.excluded[latest_check_column]
@@ -472,7 +512,14 @@ def _upsert_values(
                 #
                 # The pure DO NOTHING path is still used when
                 # returning_columns is None.
-                key_col = conflict_columns[0]
+                #
+                # NOTE: `conflict_columns` is in the NAMES namespace per the
+                # public contract, but `set_` keys and `excluded[...]` are in
+                # the KEYS namespace. Translate via `name_to_key` so the trick
+                # works for models with `Column('db_name', key='attr_name')`
+                # (where the two diverge). For the common case the translation
+                # is a no-op.
+                key_col = name_to_key[conflict_columns[0]]
                 upsert_stmt = insert_stmt.on_conflict_do_update(
                     index_elements=conflict_columns,
                     set_={key_col: insert_stmt.excluded[key_col]},

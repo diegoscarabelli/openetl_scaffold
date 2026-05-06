@@ -628,6 +628,136 @@ class TestUpsertModelInstances:
         )
         assert count == 1
 
+    def test_returning_columns_duplicates_raises(self, db_session) -> None:
+        """
+        Duplicate entries in ``returning_columns`` would silently collide in
+        ``row._asdict()`` (the second value overwrites the first). Surface as
+        a clear ``ValueError`` instead.
+        """
+
+        obj = MyTest(id=1, col_a="A")
+        with pytest.raises(ValueError, match="duplicate"):
+            upsert_model_instances(
+                session=db_session,
+                model_instances=[obj],
+                conflict_columns=["id"],
+                on_conflict_update=True,
+                returning_columns=["id", "id"],
+            )
+
+    def test_insert_ignore_returning_with_name_key_divergent_conflict_column(
+        self, db_session
+    ) -> None:
+        """
+        The INSERT_IGNORE + returning_columns no-op DO UPDATE trick must
+        translate ``conflict_columns[0]`` (a NAME) to its key before indexing
+        ``excluded[...]`` and building ``set_``. Without the translation this
+        path would ``KeyError`` on any model with ``Column.name != Column.key``.
+        Locks in the bug fix flagged by Copilot review 4239273175.
+        """
+
+        from sqlalchemy import Column, Integer, String
+        from sqlalchemy.orm import DeclarativeBase
+
+        db_session.execute(
+            text(
+                "CREATE TEMP TABLE test_namekey_insert_ignore ("
+                " pk SERIAL PRIMARY KEY,"
+                " db_uniq TEXT NOT NULL UNIQUE,"
+                " payload TEXT)"
+            )
+        )
+
+        class TempBase(DeclarativeBase):
+            pass
+
+        class NameKeyIgnore(TempBase):
+            __tablename__ = "test_namekey_insert_ignore"
+            pk = Column(Integer, primary_key=True)
+            uniq_attr = Column(
+                "db_uniq", String, unique=True, nullable=False, key="uniq_attr"
+            )
+            payload = Column(String)
+
+        # Seed.
+        upsert_model_instances(
+            session=db_session,
+            model_instances=[NameKeyIgnore(uniq_attr="K", payload="first")],
+            conflict_columns=["db_uniq"],
+            on_conflict_update=True,
+        )
+
+        # INSERT_IGNORE with returning_columns hits the no-op DO UPDATE path.
+        # Without the name_to_key translation this would raise KeyError on
+        # `excluded['db_uniq']` (since excluded is keyed by KEYS).
+        result = upsert_model_instances(
+            session=db_session,
+            model_instances=[NameKeyIgnore(uniq_attr="K", payload="ignored")],
+            conflict_columns=["db_uniq"],
+            on_conflict_update=False,
+            returning_columns=["uniq_attr", "payload"],
+        )
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].uniq_attr == "K"
+        assert result[0].payload == "first"  # existing value preserved.
+
+    def test_upsert_with_only_pk_and_audit_columns_falls_back_gracefully(
+        self, db_session
+    ) -> None:
+        """
+        For tables with only PK + conflict + audit columns and no
+        ``update_ts``, the default ``update_columns`` list is empty. The
+        helper must NOT emit ``ON CONFLICT (...) DO UPDATE SET`` with an empty
+        SET clause (invalid SQL); the no-op DO UPDATE trick is used as a
+        fallback so the conflict path still fires.
+        """
+
+        from sqlalchemy import Column, Integer
+        from sqlalchemy.orm import DeclarativeBase
+
+        db_session.execute(
+            text(
+                "CREATE TEMP TABLE test_pk_only ("
+                " user_id INTEGER NOT NULL,"
+                " group_id INTEGER NOT NULL,"
+                " PRIMARY KEY (user_id, group_id))"
+            )
+        )
+
+        class TempBase(DeclarativeBase):
+            pass
+
+        class Membership(TempBase):
+            __tablename__ = "test_pk_only"
+            user_id = Column(Integer, primary_key=True)
+            group_id = Column(Integer, primary_key=True)
+            # No update_ts and no other mutable columns.
+
+        # First upsert inserts.
+        upsert_model_instances(
+            session=db_session,
+            model_instances=[Membership(user_id=1, group_id=10)],
+            conflict_columns=["user_id", "group_id"],
+            on_conflict_update=True,
+        )
+
+        # Second upsert hits the conflict path. With the old code this
+        # would emit `ON CONFLICT (...) DO UPDATE SET` with no SET targets
+        # and Postgres would raise a syntax error.
+        upsert_model_instances(
+            session=db_session,
+            model_instances=[Membership(user_id=1, group_id=10)],
+            conflict_columns=["user_id", "group_id"],
+            on_conflict_update=True,
+        )
+
+        # Row exists, no duplicates created.
+        count = (
+            db_session.execute(text("SELECT count(*) FROM test_pk_only")).scalar()
+        )
+        assert count == 1
+
     def test_default_update_columns_excludes_pk_with_distinct_name_and_key(
         self, db_session
     ) -> None:
