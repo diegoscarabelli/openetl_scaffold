@@ -139,13 +139,13 @@ Install the [Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli) an
 
 After running `astro dev init`, configure two files:
 
-1. **`.astro/config.yaml`**: Astro's internal metadata database defaults to port 5432, which conflicts with the analytics database. Change it to a different port (e.g., 5434). The webserver port (default 8080) may also conflict with other services:
+1. **`.astro/config.yaml`**: Astro's internal metadata database defaults to port 5432, which conflicts with the analytics database. Change it to a different port (e.g., 5436). The webserver port (default 8080) may also conflict with other services:
 
     ```yaml
     postgres:
-        port: "5434"
+        port: "5436"
     webserver:
-        port: "8081"
+        port: "8083"
     ```
 
 2. **`docker-compose.override.yml`**: Pass database connection variables (`SQL_DB_*`) and mount the data directory into the scheduler container. Use `host.docker.internal` (Mac/Windows) or `172.17.0.1` (Linux) for `SQL_DB_HOST` to reach the host database from inside the container:
